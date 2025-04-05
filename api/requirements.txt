@@ -1,0 +1,5 @@
+fastapi
+pymongo
+python-dateutil
+uvicorn
+python-dotenv

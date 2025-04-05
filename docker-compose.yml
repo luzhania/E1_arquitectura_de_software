@@ -1,0 +1,90 @@
+services:
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+    env_file:
+      - .env
+    volumes:
+      - ./api:/app/api
+
+  api2:
+    build: ./api
+    ports:
+      - "8001:8000"
+    depends_on:
+      - mongo
+    env_file:
+      - .env
+    volumes:
+      - ./api:/app/api
+
+  info_broker:
+    build:
+      context: ./broker_info
+    container_name: info_broker
+    environment:
+      - MONGO_URI=mongodb://mongo_db:27017/stocks_db
+    depends_on:
+      - mongo
+    env_file:
+      - .env
+    volumes:
+      - ./broker_info:/app/broker_info
+    restart: always
+
+  updates_broker:
+    build:
+      context: ./broker_updates
+    container_name: updates_broker
+    environment:
+      - MONGO_URI=mongodb://mongo_db:27017/stocks_db
+    depends_on:
+      - mongo
+    env_file:
+      - .env
+    volumes:
+      - ./broker_updates:/app/broker_updates
+    restart: always
+
+  requests_broker:
+    build:
+      context: ./broker_requests
+    container_name: requests_broker
+    environment:
+      - MONGO_URI=mongodb://mongo_db:27017/stocks_db
+    depends_on:
+      - mongo
+    env_file:
+      - .env
+    volumes:
+      - ./broker_requests:/app/broker_requests
+    restart: always
+
+  validation_broker:
+    build:
+      context: ./broker_validation
+    container_name: validation_broker
+    environment:
+      - MONGO_URI=mongodb://mongo_db:27017/stocks_db
+    depends_on:
+      - mongo
+    env_file:
+      - .env
+    volumes:
+      - ./broker_validation:/app/broker_validation
+    restart: always
+
+  mongo:
+    image: mongo:latest
+    container_name: mongo_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: always
+
+volumes:
+  mongo_data:
