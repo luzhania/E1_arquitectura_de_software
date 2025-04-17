@@ -21,20 +21,6 @@ services:
     volumes:
       - ./api:/app/api
 
-  info_broker:
-    build:
-      context: ./broker_info
-    container_name: info_broker
-    environment:
-      - MONGO_URI=mongodb://mongo_db:27017/stocks_db
-    depends_on:
-      - mongo
-    env_file:
-      - .env
-    volumes:
-      - ./broker_info:/app/broker_info
-    restart: always
-
   updates_broker:
     build:
       context: ./broker_updates
@@ -61,20 +47,6 @@ services:
       - .env
     volumes:
       - ./broker_requests:/app/broker_requests
-    restart: always
-
-  validation_broker:
-    build:
-      context: ./broker_validation
-    container_name: validation_broker
-    environment:
-      - MONGO_URI=mongodb://mongo_db:27017/stocks_db
-    depends_on:
-      - mongo
-    env_file:
-      - .env
-    volumes:
-      - ./broker_validation:/app/broker_validation
     restart: always
 
   mongo:

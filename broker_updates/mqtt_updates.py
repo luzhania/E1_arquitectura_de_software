@@ -17,7 +17,7 @@ MONGO_URI = os.getenv("MONGO_URI")
 
 client_mongo = MongoClient(MONGO_URI)
 db = client_mongo["stocks_db"] 
-collection = db["updates"]####
+collection_stocks = db["current_stocks"]####
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
@@ -28,8 +28,21 @@ def on_message(client, userdata, msg):
     try:
         data = json.loads(msg.payload.decode("utf-8"))
         data["timestamp"] = parser.isoparse(data["timestamp"])
-        collection.insert_one(data)
-        print("Datos procesados:", data)
+        if data.get("kind") == "IPO":
+            stock_data = {
+                "symbol": data["symbol"],
+                "quantity": data["quantity"],
+                "price": data["price"],
+                "longName": data["longName"]
+            }
+
+            # Usamos upsert para evitar duplicados
+            collection_stocks.update_one(
+                {"symbol": stock_data["symbol"]},
+                {"$set": stock_data},
+                upsert=True
+            )
+            print(f"Acción registrada/actualizada: {stock_data}")
     except json.JSONDecodeError as e:
         print("Error al decodificar el JSON:", e)
 
