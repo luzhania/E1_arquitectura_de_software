@@ -17,7 +17,7 @@ MONGO_URI = os.getenv("MONGO_URI")
 
 client_mongo = MongoClient(MONGO_URI)
 db = client_mongo["stocks_db"] 
-collection_stocks = db["current_stocks"]####
+collection_stocks = db["stocks_v1"]####
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
