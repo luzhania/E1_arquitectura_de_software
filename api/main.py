@@ -6,7 +6,7 @@ from database import get_db
 app = FastAPI()
 
 db = get_db()
-collection = db["stocks"]
+collection = db["current_stocks"]
 
 @app.get("/")
 def read_root():
