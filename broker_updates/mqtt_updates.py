@@ -16,8 +16,8 @@ MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 MONGO_URI = os.getenv("MONGO_URI")
 
 client_mongo = MongoClient(MONGO_URI)
-db = client_mongo["stocks_db"] 
-collection_stocks = db["stocks_v1"]####
+db = client_mongo["stocks_db_v2"] 
+collection_stocks = db["stocks"]####
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
