@@ -3,3 +3,5 @@ pymongo
 python-dateutil
 uvicorn
 python-dotenv
+pydantic
+paho-mqtt

@@ -24,19 +24,19 @@ services:
       - ./broker_updates:/app/broker_updates
     restart: always
 
-  requests_broker:
-    build:
-      context: ./broker_requests
-    container_name: requests_broker
-    environment:
-      - MONGO_URI=mongodb://mongo_db:27017/stocks_db
-    depends_on:
-      - mongo
-    env_file:
-      - .env
-    volumes:
-      - ./broker_requests:/app/broker_requests
-    restart: always
+  # requests_broker:
+  #   build:
+  #     context: ./broker_requests
+  #   container_name: requests_broker
+  #   environment:
+  #     - MONGO_URI=mongodb://mongo_db:27017/stocks_db
+  #   depends_on:
+  #     - mongo
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./broker_requests:/app/broker_requests
+  #   restart: always
 
   mongo:
     image: mongo:latest

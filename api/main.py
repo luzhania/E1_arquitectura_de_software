@@ -2,8 +2,10 @@ from fastapi import FastAPI, Query
 from typing import Optional
 from datetime import datetime
 from database import get_db
+from routes import router
 
 app = FastAPI()
+app.include_router(router)
 
 db = get_db()
 collection = db["current_stocks"]
