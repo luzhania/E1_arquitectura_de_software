@@ -16,7 +16,7 @@ MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 MONGO_URI = os.getenv("MONGO_URI")
 
 client_mongo = MongoClient(MONGO_URI)
-db = client_mongo["stocks_db_v2"]
+db = client_mongo["stocks_db"]
 collection = db["requests"]####
 
 def on_connect(client, userdata, flags, rc):

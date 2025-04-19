@@ -7,4 +7,4 @@ load_dotenv()
 def get_db():
     mongo_uri = os.getenv("MONGO_URI")
     client = MongoClient(mongo_uri)
-    return client["stocks_db_v2"]
+    return client["stocks_db"]

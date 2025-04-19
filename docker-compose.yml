@@ -26,7 +26,7 @@ services:
       context: ./broker_updates
     container_name: updates_broker
     environment:
-      - MONGO_URI=mongodb://mongo_db:27017/stocks_db_v2
+      - MONGO_URI=mongodb://mongo_db:27017/stocks_db
     depends_on:
       - mongo
     env_file:
@@ -40,7 +40,7 @@ services:
       context: ./broker_requests
     container_name: requests_broker
     environment:
-      - MONGO_URI=mongodb://mongo_db:27017/stocks_db_v2
+      - MONGO_URI=mongodb://mongo_db:27017/stocks_db
     depends_on:
       - mongo
     env_file:
