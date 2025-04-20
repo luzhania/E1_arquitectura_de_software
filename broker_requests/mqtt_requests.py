@@ -18,6 +18,7 @@ MONGO_URI = os.getenv("MONGO_URI")
 
 client_mongo = MongoClient(MONGO_URI)
 db = client_mongo["stocks_db"] 
+collection_requests = db["requests"]####
 collection_stocks = db["current_stocks"]####
 
 def on_connect(client, userdata, flags, rc):
@@ -30,74 +31,92 @@ def on_message(client, userdata, msg):
         data = json.loads(msg.payload.decode("utf-8"))
         if data.get("timestamp"):
             data["timestamp"] = parser.isoparse(data["timestamp"])
-        kind = data.get("kind")
-        symbol = data.get("symbol")
+        
 
-        if kind == "IPO":
-            stock_data = {
-                "symbol": data["symbol"],
+        if data.get("symbol"):
+            request_data = {
+                "request_id": data["request_id"],
+                "group_id": data["group_id"], 
                 "quantity": data["quantity"],
-                "price": data["price"],
-                "longName": data["longName"],
-                "timestamp": data["timestamp"]
+                "symbol": data["symbol"],
+                "operation": data["operation"],
+                "status": "PENDING",
+                "applied": False,
             }
-            collection_stocks.update_one(
-                {"symbol": symbol},
-                {"$set": stock_data},
-                upsert=True
-            )
-            print(f"[IPO] Acción registrada/actualizada: {stock_data}")
+            collection_requests.insert_one(request_data)
+            print(f"Request registrada: {request_data}")
 
-        elif kind == "EMIT":
-            emit_quantity = data["quantity"]
-            new_price = data["price"]
+        elif data.get("status"):
+            request_id = data["request_id"]
+            status = data["status"]
             timestamp = data["timestamp"]
-
-            result = collection_stocks.find_one({"symbol": symbol})
-            if result:
-                updated_quantity = result["quantity"] + emit_quantity
-                collection_stocks.update_one(
-                    {"symbol": symbol},
+            request_result = collection_requests.find_one({"request_id": request_id})
+            if request_result:
+                collection_requests.update_one(
+                    {"request_id": request_id},
                     {
                         "$set": {
-                            "price": new_price,
+                            "status": status,
                             "timestamp": timestamp
                             },
-                        "$inc": {"quantity": emit_quantity}
                     }
                 )
-                print(f"[EMIT] Acción actualizada: {symbol} | Nuevo precio: {new_price}, Cantidad total: {updated_quantity}")
-            else:
-                new_stock = {
-                    "symbol": symbol,
-                    "quantity": emit_quantity,
-                    "price": new_price,
-                    "longName": data["longName"],
-                    "timestamp": timestamp
-                }
-                collection_stocks.insert_one(new_stock)
-                print(f"[UPDATE] Acción no encontrada. Se insertó con valores: {new_stock}")
+                print(f"Request actualizada: {request_id} | Nuevo estado: {status}")
+                stock_result = collection_stocks.find_one({"symbol": request_result["symbol"]})
+                if status == "ACCEPTED":
+                    # // Actualizar stock en la colección de stocks, decrementando la cantidad si es posible
+                    if stock_result:
+                        new_quantity = stock_result["quantity"] - request_result["quantity"]
+                        if new_quantity >= 0:
+                            collection_stocks.update_one(
+                                {"symbol": request_result["symbol"]},
+                                {
+                                    "$set": {
+                                        "quantity": new_quantity,
+                                        "timestamp": timestamp
+                                    }
+                                }
+                            )
+                            collection_requests.update_one(
+                                {"request_id": request_id},
+                                {
+                                    "$set": {
+                                        "applied": True
+                                        },
+                                }
+                            )
+                            print(f"Stock actualizado: {request_result['symbol']} | Nueva cantidad: {new_quantity}")
+                        else:
+                            print(f"No hay suficiente cantidad de {request_result['symbol']} para completar la solicitud.")
+                    else:
+                        print(f"Stock {request_result['symbol']} no encontrado.")
+                elif status == "REJECTED":
+                    # // Actualizar stock en la colección de stocks, incrementando la cantidad
+                    if stock_result:
+                        if request_result["applied"]:
+                            new_quantity = stock_result["quantity"] + request_result["quantity"]
+                            collection_stocks.update_one(
+                                {"symbol": request_result["symbol"]},
+                                {
+                                    "$set": {
+                                        "quantity": new_quantity,
+                                        "timestamp": timestamp
+                                    }
+                                }
+                            )
+                            print(f"Stock actualizado: {request_result['symbol']} | Nueva cantidad: {new_quantity}")
+                        else:
+                            collection_requests.update_one(
+                                {"request_id": request_id},
+                                {
+                                    "$set": {
+                                        "applied": True
+                                        },
+                                }
+                            )
+                    else:
+                        print(f"Stock {request_result['symbol']} no encontrado.")
 
-        elif kind == "UPDATE":
-            new_price = data["price"]
-            result = collection_stocks.find_one({"symbol": symbol})
-            if result:
-                collection_stocks.update_one(
-                    {"symbol": symbol},
-                    {"$set": {"price": new_price,
-                              "timestamp": data["timestamp"]}}
-                )
-                print(f"[UPDATE] Precio actualizado para {symbol}: {new_price}")
-            else:
-                new_stock = {
-                    "symbol": symbol,
-                    "quantity": 0,
-                    "price": new_price,
-                    "longName": "",
-                    "timestamp": data["timestamp"]
-                }
-                collection_stocks.insert_one(new_stock)
-                print(f"[UPDATE] Acción no encontrada. Se insertó con valores por defecto: {new_stock}")
 
 
     except json.JSONDecodeError as e:
