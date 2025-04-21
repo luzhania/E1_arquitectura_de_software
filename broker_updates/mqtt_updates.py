@@ -4,6 +4,7 @@ import paho.mqtt.client as mqtt
 from dateutil import parser
 from pymongo import MongoClient
 from dotenv import load_dotenv
+import time
 load_dotenv()
 
 
@@ -27,7 +28,8 @@ def on_message(client, userdata, msg):
     print(f"Mensaje recibido en {msg.topic}: {msg.payload.decode()}")
     try:
         data = json.loads(msg.payload.decode("utf-8"))
-        data["timestamp"] = parser.isoparse(data["timestamp"])
+        if data.get("timestamp"):
+            data["timestamp"] = parser.isoparse(data["timestamp"])
         kind = data.get("kind")
         symbol = data.get("symbol")
 

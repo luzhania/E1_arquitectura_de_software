@@ -10,17 +10,6 @@ services:
     volumes:
       - ./api:/app/api
 
-  api2:
-    build: ./api
-    ports:
-      - "8001:8000"
-    depends_on:
-      - mongo
-    env_file:
-      - .env
-    volumes:
-      - ./api:/app/api
-
   updates_broker:
     build:
       context: ./broker_updates
