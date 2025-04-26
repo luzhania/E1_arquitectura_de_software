@@ -3,17 +3,17 @@ from typing import Optional
 from datetime import datetime
 from database import get_db
 from routes import router
-# from fastapi.middleware.cors import CORSMiddleware 
+from fastapi.middleware.cors import CORSMiddleware 
 
 app = FastAPI()
 
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["http://localhost:5173"],  # URL de tu frontend
-#     allow_credentials=True,
-#     allow_methods=["*"],  # Permite todos los métodos
-#     allow_headers=["*"],  # Permite todos los headers
-# )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://www.arquitecturadesoftware.me/"],  # URL de tu frontend
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite todos los métodos
+    allow_headers=["*"],  # Permite todos los headers
+)
 
 app.include_router(router)
 
