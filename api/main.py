@@ -78,6 +78,11 @@ def buy_stock(symbol: str, quantity: int, user_email: str):
         return {"error": f"Stock con símbolo {symbol} no encontrado."}
     if stock["quantity"] < quantity:
         return {"error": "No hay suficientes acciones disponibles."}
+    user = users_collection.find_one({"correo": user_email})
+    if not user:
+        return {"error": "Usuario no encontrado."}
+    if user["saldo"] < stock["price"] * quantity:
+        return {"error": "Saldo insuficiente."}
 
     collection.update_one({"symbol": symbol}, {"$set": {"quantity": stock["quantity"]}})
 
@@ -88,7 +93,8 @@ def buy_stock(symbol: str, quantity: int, user_email: str):
         "user_email": user_email,
         "timestamp": datetime.utcnow()
     }
-    transactions_collection.insert_one(transaction)
+    result = transactions_collection.insert_one(transaction)
+    transaction["_id"] = str(result.inserted_id)
     mqtt_manager.publish_buy_request(symbol, quantity)
     return {"message": "Solicitud de compra exitosa.", "transaction": transaction}
 
