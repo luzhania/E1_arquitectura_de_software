@@ -93,13 +93,29 @@ def register_user(correo: str, password: str,telefono:str,nombre:str):
         "password": password,
         "telefono": telefono,
         "nombre": nombre,
-        "created_at": datetime.utcnow()}
+        "saldo": 0.0,
+        "transactions": [],
+        "stocks": [],
+        "updated_at": datetime.utcnow()}
     users_collection.insert_one(user)
     return {"message": "Usuario registrado exitosamente.", "user": {"correo": correo, "nombre": nombre}}
 @app.post("/login")
+
 def login_user(correo: str, password: str):
     user = users_collection.find_one({"correo": correo, "password": password})
     if user:
         return {"message": "Inicio de sesión exitoso.", "user": {"correo": correo, "nombre": user["nombre"]}}
     else:
         return {"error": "Credenciales incorrectas."}
+    
+#usuario carga su billetera
+@app.post("/wallet")
+def add_funds(correo: str, monto: float):
+    if monto <= 0:
+        return {"error": "El monto debe ser mayor que cero."}
+    
+    user = users_collection.find_one({"correo": correo})
+    if not user:
+        return {"error": "Usuario no encontrado."}
+    users_collection.update_one({"correo": correo}, {"$set": {"saldo": user["saldo"] + monto}})
+    return {"message": "Fondos añadidos exitosamente.", "new_balance": user["saldo"] + monto}
