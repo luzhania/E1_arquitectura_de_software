@@ -20,6 +20,8 @@ client_mongo = MongoClient(MONGO_URI)
 db = client_mongo["stocks_db"] 
 collection_requests = db["requests"]####
 collection_stocks = db["current_stocks"]####
+collection_transactions = db["transactions"]####
+collection_users = db["users"]####
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
@@ -63,9 +65,23 @@ def on_message(client, userdata, msg):
                 )
                 print(f"Request actualizada: {request_id} | Nuevo estado: {status}")
                 stock_result = collection_stocks.find_one({"symbol": request_result["symbol"]})
-                if status == "ACCEPTED":
-                    # // Actualizar stock en la colección de stocks, decrementando la cantidad si es posible
-                    if stock_result:
+                my_user_stock_result = collection_transactions.find_one({"request_id": request_id})
+
+                if my_user_stock_result:
+                    collection_transactions.update_one(
+                        {"request_id": request_id},
+                        {
+                            "$set": {
+                                "status": status,
+                                "timestamp": timestamp
+                                },
+                        }
+                    )
+                    print(f"Transacción actualizada: {request_id} | Nuevo estado: {status}")
+
+                if stock_result:
+                    if status == "ACCEPTED":
+                        # // Actualizar stock en la colección de stocks, decrementando la cantidad si es posible
                         new_quantity = stock_result["quantity"] - request_result["quantity"]
                         if new_quantity >= 0:
                             collection_stocks.update_one(
@@ -88,11 +104,28 @@ def on_message(client, userdata, msg):
                             print(f"Stock actualizado: {request_result['symbol']} | Nueva cantidad: {new_quantity}")
                         else:
                             print(f"No hay suficiente cantidad de {request_result['symbol']} para completar la solicitud.")
-                    else:
-                        print(f"Stock {request_result['symbol']} no encontrado.")
-                elif status == "REJECTED":
-                    # // Actualizar stock en la colección de stocks, incrementando la cantidad
-                    if stock_result:
+                        
+                        #Actualizar wallet de usuario
+                        if my_user_stock_result:
+                            user_result = collection_users.find_one({"correo": my_user_stock_result["user_email"]})
+                            if user_result:
+                                new_balance = user_result["saldo"] - (request_result["quantity"] * stock_result["price"])
+                                collection_users.update_one(
+                                    {"correo": my_user_stock_result["user_email"]},
+                                    {
+                                        "$set": {
+                                            "saldo": new_balance,
+                                            "timestamp": timestamp
+                                        }
+                                    }
+                                )
+                                print(f"Saldo actualizado para el usuario {my_user_stock_result['user_email']} | Nuevo saldo: {new_balance}")
+                            else:
+                                print(f"Usuario {my_user_stock_result['user_email']} no encontrado.")
+                        
+
+                    elif status == "REJECTED":
+                        # // Actualizar stock en la colección de stocks, incrementando la cantidad
                         if request_result["applied"]:
                             new_quantity = stock_result["quantity"] + request_result["quantity"]
                             collection_stocks.update_one(
@@ -105,6 +138,24 @@ def on_message(client, userdata, msg):
                                 }
                             )
                             print(f"Stock actualizado: {request_result['symbol']} | Nueva cantidad: {new_quantity}")
+
+                            # // Actualizar wallet de usuario
+                            if my_user_stock_result:
+                                user_result = collection_users.find_one({"correo": my_user_stock_result["user_email"]})
+                                if user_result:
+                                    new_balance = user_result["saldo"] + (request_result["quantity"] * stock_result["price"])
+                                    collection_users.update_one(
+                                        {"correo": my_user_stock_result["user_email"]},
+                                        {
+                                            "$set": {
+                                                "saldo": new_balance,
+                                                "timestamp": timestamp
+                                            }
+                                        }
+                                    )
+                                    print(f"Saldo actualizado para el usuario {my_user_stock_result['user_email']} | Nuevo saldo: {new_balance}")
+                                else:
+                                    print(f"Usuario {my_user_stock_result['user_email']} no encontrado.")
                         else:
                             collection_requests.update_one(
                                 {"request_id": request_id},
@@ -114,8 +165,8 @@ def on_message(client, userdata, msg):
                                         },
                                 }
                             )
-                    else:
-                        print(f"Stock {request_result['symbol']} no encontrado.")
+                else:
+                    print(f"Stock {request_result['symbol']} no encontrado.")
 
 
 
