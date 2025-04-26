@@ -98,6 +98,7 @@ def buy_stock(symbol: str, quantity: int, user_email: str):
     result = transactions_collection.insert_one(transaction)
     transaction["_id"] = str(result.inserted_id)
     return {"message": "Solicitud de compra exitosa.", "transaction": transaction}
+    # return {"message": "Solicitud de compra exitosa."}
 
 class RegisterUserRequest(BaseModel):
     correo: str

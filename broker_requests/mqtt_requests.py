@@ -34,7 +34,7 @@ def on_message(client, userdata, msg):
         if data.get("timestamp"):
             data["timestamp"] = parser.isoparse(data["timestamp"])
         
-
+        # Si es request de compra
         if data.get("symbol"):
             request_data = {
                 "request_id": data["request_id"],
@@ -47,11 +47,18 @@ def on_message(client, userdata, msg):
             }
             collection_requests.insert_one(request_data)
             print(f"Request registrada: {request_data}")
+            return
 
-        elif data.get("status"):
-            request_id = data["request_id"]
-            status = data["status"]
+        # Si es respuesta a una solicitud
+        if data.get("kind") == "response":
+            request_id = data.get("request_id")
+            status = data.get("status")    # e.g. "ACCEPTED", "REJECTED", "error"
             timestamp = data["timestamp"]
+
+            if not request_id:
+                print("Ignorando response sin request_id:", data)
+                return
+
             request_result = collection_requests.find_one({"request_id": request_id})
             if request_result:
                 collection_requests.update_one(
