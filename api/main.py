@@ -11,8 +11,10 @@ app.include_router(router)
 
 db = get_db()
 collection = db["current_stocks"]
-users_collection = db["users"]
 transactions_collection = db["transactions"]
+
+users_db = get_db()
+users_collection = users_db["users"]
 
 
 @app.get("/")
