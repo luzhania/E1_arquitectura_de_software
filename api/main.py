@@ -107,7 +107,9 @@ def buy_stock(symbol: str, quantity: int, user_email: str):
 def get_event_log(symbol: str, page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
     skip = (page - 1) * count
     query = {"symbol": symbol}
-    events = list(collection_event_log.find(query).skip(skip).limit(count))
+    
+    events = list(collection_event_log.find(query, {"_id": 0}).skip(skip).limit(count))
+
     if events:
         return {"symbol": symbol, "event_log": events, "page": page, "count": count}
     else:
