@@ -47,7 +47,7 @@ def get_stocks(
     price: Optional[str] = None,
     longName: Optional[str] = None,
     timestamp: Optional[str] = None,
-    quantity: Optional[int] = None,
+    quantity: Optional[str] = None,  # Modificado para aceptar un rango en formato "min-max"
     page: int = Query(1, ge=1), 
     count: int = Query(25, ge=1)
 ):
@@ -103,9 +103,28 @@ def get_stocks(
         except ValueError as e:
             print("Fecha inválida en timestamp:", e)
     
-    # Handle quantity filter
+    # Handle quantity filter (format: min-max)
     if quantity:
-        query["quantity"] = {"$gte": quantity}
+        quantity_parts = quantity.split('-')
+        if len(quantity_parts) == 2:
+            min_quantity, max_quantity = quantity_parts
+            query["quantity"] = {}
+            if min_quantity:
+                try:
+                    query["quantity"]["$gte"] = int(min_quantity)
+                except ValueError:
+                    pass
+            if max_quantity:
+                try:
+                    query["quantity"]["$lte"] = int(max_quantity)
+                except ValueError:
+                    pass
+        else:
+            # Mantener compatibilidad con la versión anterior
+            try:
+                query["quantity"] = {"$gte": int(quantity)}
+            except ValueError:
+                pass
     
     # For debugging
     print(f"MongoDB query: {query}")
@@ -243,6 +262,19 @@ def add_funds(monto: float, user: Dict = Depends(verify_token)):
         new_balance = user_db["saldo"] + monto
         users_collection.update_one({"correo": correo}, {"$set": {"saldo": new_balance}})
         return {"message": "Fondos añadidos exitosamente.", "new_balance": new_balance}
+
+@app.get("/wallet")
+def get_wallet(user: Dict = Depends(verify_token)):
+    correo = user["sub"]
+    
+    user_db = users_collection.find_one({"correo": correo})
+    if user_db:
+        return {
+            "correo": correo, 
+            "saldo": user_db.get("saldo", 0)
+        }
+    else:
+        return {"error": "Usuario no encontrado."}
 
     
 @app.get("/transactions")
