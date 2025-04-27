@@ -19,6 +19,8 @@ MONGO_URI = os.getenv("MONGO_URI")
 client_mongo = MongoClient(MONGO_URI)
 db = client_mongo["stocks_db"] 
 collection_stocks = db["current_stocks"]####
+collection_event_log = db["event_log"]####
+
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
@@ -47,6 +49,16 @@ def on_message(client, userdata, msg):
                 upsert=True
             )
             print(f"[IPO] Acción registrada/actualizada: {stock_data}")
+            event_data = {
+                "type": data["kind"],
+                "symbol": data["symbol"],
+                "quantity": data["quantity"],
+                "price": data["price"],
+                "longName": data.get("longName", ""),
+                "timestamp": data["timestamp"]
+            }
+            collection_event_log.insert_one(event_data)
+            print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
 
         elif kind == "EMIT":
             emit_quantity = data.get("quantity", 0)
@@ -67,6 +79,18 @@ def on_message(client, userdata, msg):
                     }
                 )
                 print(f"[EMIT] Acción actualizada: {symbol} | Nuevo precio: {new_price}, Cantidad total: {updated_quantity}")
+
+                event_data = {
+                "type": data["kind"],
+                "symbol": data["symbol"],
+                "quantity": data["quantity"],
+                "price": data["price"],
+                "longName": data.get("longName", ""),
+                "timestamp": data["timestamp"]
+                }
+                collection_event_log.insert_one(event_data)
+                print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
+
             else:
                 new_stock = {
                     "symbol": symbol,
@@ -88,6 +112,16 @@ def on_message(client, userdata, msg):
                               "timestamp": data["timestamp"]}}
                 )
                 print(f"[UPDATE] Precio actualizado para {symbol}: {new_price}")
+                event_data = {
+                    "type": data["kind"],
+                    "symbol": data["symbol"],
+                    "quantity": 0,
+                    "price": new_price,
+                    "longName": "",
+                    "timestamp": data["timestamp"]
+                }
+                collection_event_log.insert_one(event_data)
+                print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
             else:
                 new_stock = {
                     "symbol": symbol,

@@ -20,7 +20,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[URL_FRONTEND],  # URL de tu frontend
+    allow_origins=["https://www.arquitecturadesoftware.me"],  # URL de tu frontend
     allow_credentials=True,
     allow_methods=["*"],  # Permite todos los métodos
     allow_headers=["*"],  # Permite todos los headers
@@ -28,13 +28,12 @@ app.add_middleware(
 
 app.include_router(router)
 
-
 db = get_db()
 collection = db["current_stocks"]
 transactions_collection = db["transactions"]
-
 users_db = get_db()
 users_collection = users_db["users"]
+collection_event_log = db["event_log"]
 
 
 @app.get("/")
@@ -214,6 +213,21 @@ class WalletRequest(BaseModel):
 class BuyStockRequest(BaseModel):
     quantity: int
     user_email: str
+
+#historial de transacciones
+@app.get("/stocks/{symbol}/event_log")
+def get_event_log(symbol: str, page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
+    skip = (page - 1) * count
+    query = {"symbol": symbol}
+    
+    events = list(collection_event_log.find(query, {"_id": 0}).skip(skip).limit(count))
+
+    if events:
+        return {"symbol": symbol, "event_log": events, "page": page, "count": count}
+    else:
+        return {"error": f"No se encontraron eventos para el símbolo {symbol}."}
+
+
 
 @app.post("/register")
 def register_user(request: RegisterUserRequest):
