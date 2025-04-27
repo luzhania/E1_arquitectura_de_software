@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Depends
 from typing import Optional
 from datetime import datetime
 from database import get_db
@@ -7,6 +7,7 @@ from routes import router
 from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel
 from datetime import datetime
+from auth import verify_token
 
 app = FastAPI()
 
@@ -72,7 +73,8 @@ def get_stock_detail(symbol: str, price: Optional[float] = None, quantity: Optio
         return {"error": f"Stock con símbolo {symbol} no encontrado."}
 
 @app.post("/stocks/{symbol}/buy")
-def buy_stock(symbol: str, quantity: int, user_email: str):
+def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
+    user_email = user["email"]
     if quantity <= 0:
         return {"error": "La cantidad debe ser mayor que cero."} #quizas que las acciones que se quieran/puedan se vean en el frontend
     stock = collection.find_one({"symbol": symbol})
