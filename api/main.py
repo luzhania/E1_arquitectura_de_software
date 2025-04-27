@@ -1,26 +1,17 @@
-from fastapi import FastAPI, Query, Depends
+from fastapi import FastAPI, Query
 from typing import Optional
 from datetime import datetime
 from database import get_db
-from buy_requests.buy_requests import mqtt_manager 
 from routes import router
 from fastapi.middleware.cors import CORSMiddleware 
-from pydantic import BaseModel
-from datetime import datetime
-from auth import verify_token
-from typing import Dict
-
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-URL_FRONTEND = os.getenv("URL_FRONTEND")
+from buy_requests.buy_requests import mqtt_manager
+from uuid import uuid4
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[URL_FRONTEND],  # URL de tu frontend
+    allow_origins=["https://www.arquitecturadesoftware.me"],  # URL de tu frontend
     allow_credentials=True,
     allow_methods=["*"],  # Permite todos los métodos
     allow_headers=["*"],  # Permite todos los headers
@@ -28,13 +19,12 @@ app.add_middleware(
 
 app.include_router(router)
 
-
 db = get_db()
 collection = db["current_stocks"]
 transactions_collection = db["transactions"]
-
 users_db = get_db()
 users_collection = users_db["users"]
+collection_event_log = db["event_log"]
 
 
 @app.get("/")
@@ -80,140 +70,86 @@ def get_stock_detail(symbol: str, price: Optional[float] = None, quantity: Optio
         return {"error": f"Stock con símbolo {symbol} no encontrado."}
 
 @app.post("/stocks/{symbol}/buy")
-def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
-    user_email = user["sub"]
+def buy_stock(symbol: str, quantity: int, user_email: str):
     if quantity <= 0:
-        return {"error": "La cantidad debe ser mayor que cero."} #quizas que las acciones que se quieran/puedan se vean en el frontend
+        return {"error": "La cantidad debe ser mayor que cero."}
+    
     stock = collection.find_one({"symbol": symbol})
     if not stock:
         return {"error": f"Stock con símbolo {symbol} no encontrado."}
+    
     if stock["quantity"] < quantity:
         return {"error": "No hay suficientes acciones disponibles."}
-    # user = users_collection.find_one({"correo": user_email})
-    # if not user:
-    #     return {"error": "Usuario no encontrado."}
-    # if user["saldo"] < stock["price"] * quantity:
-    #     return {"error": "Saldo insuficiente."}
+    
+    user = users_collection.find_one({"correo": user_email})
+    if not user:
+        return {"error": "Usuario no encontrado."}
+    
+    request_id = str(uuid4())
+    timestamp = datetime.utcnow()
+    
 
-    my_request_id = mqtt_manager.publish_buy_request(symbol, quantity)
+    collection.update_one({"symbol": symbol}, {"$set": {"quantity": stock["quantity"]}})
+
+    #pregutar si es necesario esto, duda de cuando se tiene la confirmacion, como se actualiza y como se guarda con el id de usuario para actulizar sus acciones
     transaction = {
-        "request_id": my_request_id,
         "symbol": symbol,
         "quantity": quantity,
         "user_email": user_email,
-        "timestamp": datetime.utcnow(),
-        "status": "PENDING"
+        "timestamp": datetime.utcnow()
     }
-    result = transactions_collection.insert_one(transaction)
-    transaction["_id"] = str(result.inserted_id)
+    transactions_collection.insert_one(transaction)
+    mqtt_manager.publish_buy_request(symbol, quantity)
     return {"message": "Solicitud de compra exitosa.", "transaction": transaction}
-    # return {"message": "Solicitud de compra exitosa."}
 
-class RegisterUserRequest(BaseModel):
-    correo: str
-    password: str
-    telefono: str
-    nombre: str
+#historial de transacciones
+@app.get("/stocks/{symbol}/event_log")
+def get_event_log(symbol: str, page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
+    skip = (page - 1) * count
+    query = {"symbol": symbol}
+    events = list(collection_event_log.find(query).skip(skip).limit(count))
+    if events:
+        return {"symbol": symbol, "event_log": events, "page": page, "count": count}
+    else:
+        return {"error": f"No se encontraron eventos para el símbolo {symbol}."}
 
-class LoginRequest(BaseModel):
-    correo: str
-    password: str
 
-class WalletRequest(BaseModel):
-    # correo: str
-    monto: float
-
-class BuyStockRequest(BaseModel):
-    quantity: int
-    user_email: str
 
 @app.post("/register")
-def register_user(request: RegisterUserRequest):
-    if users_collection.find_one({"correo": request.correo}):
+def register_user(correo: str, password: str,telefono:str,nombre:str):
+    if users_collection.find_one({"correo": correo}):
         return {"error": "El correo ya está registrado."}
-    elif not request.correo or not request.password or not request.telefono or not request.nombre:
-        return {"error": "Todos los campos son obligatorios."}
     
+    elif not correo or not password or not telefono or not nombre: #esto puede modificare directamente en el frontend
+        return {"error": "Todos los campos son obligatorios."}
     user = {
-        "correo": request.correo,
-        "password": request.password,
-        "telefono": request.telefono,
-        "nombre": request.nombre,
+        "correo": correo,
+        "password": password,
+        "telefono": telefono,
+        "nombre": nombre,
         "saldo": 0.0,
-        "updated_at": datetime.utcnow()
-    }
+        "transactions": [],
+        "stocks": [],
+        "updated_at": datetime.utcnow()}
     users_collection.insert_one(user)
-    return {"message": "Usuario registrado exitosamente.", "user": {"correo": request.correo, "nombre": request.nombre}}
-
-
+    return {"message": "Usuario registrado exitosamente.", "user": {"correo": correo, "nombre": nombre}}
 @app.post("/login")
-def login_user(request: LoginRequest):
-    user = users_collection.find_one({"correo": request.correo, "password": request.password})
+
+def login_user(correo: str, password: str):
+    user = users_collection.find_one({"correo": correo, "password": password})
     if user:
-        return {"message": "Inicio de sesión exitoso.", "user": {"correo": request.correo, "nombre": user["nombre"]}}
+        return {"message": "Inicio de sesión exitoso.", "user": {"correo": correo, "nombre": user["nombre"]}}
     else:
         return {"error": "Credenciales incorrectas."}
-
-
+    
+#usuario carga su billetera
 @app.post("/wallet")
-def add_funds(monto: float, user: Dict = Depends(verify_token)):
-    correo = user["sub"]
+def add_funds(correo: str, monto: float):
     if monto <= 0:
         return {"error": "El monto debe ser mayor que cero."}
     
-    user_db = users_collection.find_one({"correo": correo})
-    if not user_db:
-        # Si el usuario no existe, lo creamos
-        users_collection.insert_one({
-            "correo": correo,
-            "saldo": monto
-        })
-        return {"message": "Usuario creado y fondos añadidos exitosamente.", "new_balance": monto}
-    else:
-        # Si el usuario existe, actualizamos su saldo
-        new_balance = user_db["saldo"] + monto
-        users_collection.update_one({"correo": correo}, {"$set": {"saldo": new_balance}})
-        return {"message": "Fondos añadidos exitosamente.", "new_balance": new_balance}
-
-    
-@app.get("/transactions")
-def get_transactions(user: Dict = Depends(verify_token), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
-    correo = user["sub"]
-    skip = (page - 1) * count
-    transactions = list(
-        transactions_collection.find({"user_email": correo}, {"_id": 0})
-        .skip(skip)
-        .limit(count)
-    )
-    
-    if transactions:
-        return {"transactions": transactions, "page": page, "count": count}
-    else:
-        return {"error": f"No se encontraron transacciones para el usuario {correo}."}
-
-
-@app.get("/transactions/ok")
-def get_transactions_ok(user: Dict = Depends(verify_token), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
-    correo = user["sub"]
-    skip = (page - 1) * count
-    transactions = list(
-        transactions_collection.find({"user_email": correo, "status": "OK"}, {"_id": 0})
-        .skip(skip)
-        .limit(count)
-    )
-    
-    if transactions:
-        return {"transactions": transactions, "page": page, "count": count}
-    else:
-        return {"error": f"No se encontraron transacciones OK para el usuario {correo}."}
-
-
-@app.get("/balance")
-def get_user_info(user: Dict = Depends(verify_token)):
-    correo = user["sub"]
-    user_db = users_collection.find_one({"correo": correo}, {"_id": 0})
-    
-    if user_db:
-        return {"user": user_db}
-    else:
+    user = users_collection.find_one({"correo": correo})
+    if not user:
         return {"error": "Usuario no encontrado."}
+    users_collection.update_one({"correo": correo}, {"$set": {"saldo": user["saldo"] + monto}})
+    return {"message": "Fondos añadidos exitosamente.", "new_balance": user["saldo"] + monto}

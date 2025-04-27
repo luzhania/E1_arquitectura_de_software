@@ -22,6 +22,7 @@ collection_requests = db["requests"]####
 collection_stocks = db["current_stocks"]####
 collection_transactions = db["transactions"]####
 collection_users = db["users"]####
+collection_event_log = db["event_log"]####
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
@@ -33,6 +34,20 @@ def on_message(client, userdata, msg):
         data = json.loads(msg.payload.decode("utf-8"))
         if data.get("timestamp"):
             data["timestamp"] = parser.isoparse(data["timestamp"])
+        
+        #si es IPO/EMIT
+        if data.get("kind") in ("IPO", "EMIT"):
+            event_data = {
+                "type": data["kind"],
+                "symbol": data["symbol"],
+                "quantity": data["quantity"],
+                "price": data["price"],
+                "longName": data.get("longName", ""),
+                "timestamp": data["timestamp"]
+            }
+            collection_event_log.insert_one(event_data)
+            print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
+            return
         
         # Si es request de compra
         if data.get("symbol"):
@@ -129,6 +144,16 @@ def on_message(client, userdata, msg):
                                 print(f"Saldo actualizado para el usuario {my_user_stock_result['user_email']} | Nuevo saldo: {new_balance}")
                             else:
                                 print(f"Usuario {my_user_stock_result['user_email']} no encontrado.")
+                        event_data = {
+                            "type": "BUY",
+                            "symbol": request_result["symbol"],
+                            "quantity": request_result["quantity"],
+                            "group_id": request_result["group_id"],
+                            "price": stock_result["price"],
+                            "timestamp": timestamp
+                        }
+                        collection_event_log.insert_one(event_data)
+                        print(f"Compra exitosa registrada en el event_log: {event_data}")
                         
 
                     elif status == "REJECTED":
