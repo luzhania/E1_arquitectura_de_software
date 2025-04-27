@@ -37,11 +37,11 @@ def on_message(client, userdata, msg):
         # Si es request de compra
         if data.get("symbol"):
             request_data = {
-                "request_id": data["request_id"],
-                "group_id": data["group_id"], 
-                "quantity": data["quantity"],
-                "symbol": data["symbol"],
-                "operation": data["operation"],
+                "request_id": data.get("request_id"),
+                "group_id": data.get("group_id"), 
+                "quantity": data.get("quantity", 0),
+                "symbol": data.get("symbol"),
+                "operation": data.get("operation", "BUY"),
                 "status": "PENDING",
                 "applied": False,
             }

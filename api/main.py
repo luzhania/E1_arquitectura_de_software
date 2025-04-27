@@ -150,6 +150,7 @@ def get_stock_detail(symbol: str, price: Optional[float] = None, quantity: Optio
 @app.post("/stocks/{symbol}/buy")
 def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
     user_email = user["sub"]
+    print(f"User email: {user_email}")
     if quantity <= 0:
         return {"error": "La cantidad debe ser mayor que cero."} #quizas que las acciones que se quieran/puedan se vean en el frontend
     stock = collection.find_one({"symbol": symbol})
@@ -247,6 +248,7 @@ def add_funds(monto: float, user: Dict = Depends(verify_token)):
 @app.get("/transactions")
 def get_transactions(user: Dict = Depends(verify_token), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
     correo = user["sub"]
+    print(f"User email: {correo}")
     skip = (page - 1) * count
     transactions = list(
         transactions_collection.find({"user_email": correo}, {"_id": 0})
@@ -255,7 +257,8 @@ def get_transactions(user: Dict = Depends(verify_token), page: int = Query(1, ge
     )
     
     if transactions:
-        return {"transactions": transactions, "page": page, "count": count}
+        total_transactions = transactions_collection.count_documents({"user_email": correo})
+        return {"stocks": transactions, "page": page, "count": count, "total_transactions": total_transactions}
     else:
         return {"error": f"No se encontraron transacciones para el usuario {correo}."}
 

@@ -35,11 +35,11 @@ def on_message(client, userdata, msg):
 
         if kind == "IPO":
             stock_data = {
-                "symbol": data["symbol"],
-                "quantity": data["quantity"],
-                "price": data["price"],
-                "longName": data["longName"],
-                "timestamp": data["timestamp"]
+                "symbol": data.get("symbol", "SYMBOL"),
+                "quantity": data.get("quantity", 0),
+                "price": data.get("price", 0),
+                "longName": data.get("longName"),
+                "timestamp": data.get("timestamp")
             }
             collection_stocks.update_one(
                 {"symbol": symbol},
@@ -49,13 +49,13 @@ def on_message(client, userdata, msg):
             print(f"[IPO] Acción registrada/actualizada: {stock_data}")
 
         elif kind == "EMIT":
-            emit_quantity = data["quantity"]
-            new_price = data["price"]
-            timestamp = data["timestamp"]
+            emit_quantity = data.get("quantity", 0)
+            new_price = data.get("price", 0)
+            timestamp = data.get("timestamp")
 
             result = collection_stocks.find_one({"symbol": symbol})
             if result:
-                updated_quantity = result["quantity"] + emit_quantity
+                updated_quantity = result["quantity"] + float(emit_quantity)
                 collection_stocks.update_one(
                     {"symbol": symbol},
                     {
@@ -79,7 +79,7 @@ def on_message(client, userdata, msg):
                 print(f"[UPDATE] Acción no encontrada. Se insertó con valores: {new_stock}")
 
         elif kind == "UPDATE":
-            new_price = data["price"]
+            new_price = data.get("price", 0)
             result = collection_stocks.find_one({"symbol": symbol})
             if result:
                 collection_stocks.update_one(
