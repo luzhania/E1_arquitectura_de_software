@@ -42,11 +42,79 @@ def read_root():
     return {"message": "API for stocks"}
 
 @app.get("/stocks")
-def get_stocks(page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
+def get_stocks(
+    symbol: Optional[str] = None, 
+    price: Optional[str] = None,
+    longName: Optional[str] = None,
+    timestamp: Optional[str] = None,
+    quantity: Optional[int] = None,
+    page: int = Query(1, ge=1), 
+    count: int = Query(25, ge=1)
+):
     skip = (page - 1) * count
+    query = {}
+    
+    # Add filters to the query
+    if symbol:
+        query["symbol"] = {"$regex": f"^{symbol}", "$options": "i"}
+    
+    # Handle price range (format: min-max)
+    if price:
+        price_parts = price.split('-')
+        if len(price_parts) == 2:
+            min_price, max_price = price_parts
+            query["price"] = {}
+            if min_price:
+                query["price"]["$gte"] = float(min_price)
+            if max_price:
+                query["price"]["$lte"] = float(max_price)
+    
+    # Handle stock name
+    if longName:
+        query["longName"] = {"$regex": longName, "$options": "i"}
+    
+    # Handle date range (format: YYYY-MM-DD-YYYY-MM-DD)
+    if timestamp:
+        parts = timestamp.split('-')
+        # Armamos las dos fechas
+        if len(parts) == 6:
+            from_str = f"{parts[0]}-{parts[1]}-{parts[2]}"  # "YYYY-MM-DD"
+            to_str   = f"{parts[3]}-{parts[4]}-{parts[5]}"
+        else:
+            mid = len(parts) // 2
+            from_str = '-'.join(parts[:mid])
+            to_str   = '-'.join(parts[mid:])
+
+        # Parseamos a datetime
+        try:
+            dt_from = datetime.fromisoformat(from_str)
+            dt_to   = datetime.fromisoformat(to_str)
+
+            # Normalizamos a rango full days
+            start = datetime(dt_from.year, dt_from.month, dt_from.day, 0, 0, 0)
+            end   = datetime(dt_to.year,   dt_to.month,   dt_to.day,   23, 59, 59)
+
+            query["timestamp"] = {
+                "$gte": start,
+                "$lte": end
+            }
+            print(f"From date: {start}")
+            print(f"To date:   {end}")
+        except ValueError as e:
+            print("Fecha inválida en timestamp:", e)
+    
+    # Handle quantity filter
+    if quantity:
+        query["quantity"] = {"$gte": quantity}
+    
+    # For debugging
+    print(f"MongoDB query: {query}")
+    
+    # Execute the filtered query
     if collection is not None:
-        stocks = list(collection.find({}, {"_id": 0}).skip(skip).limit(count))
-        return {"stocks": stocks, "page": page, "count": count}
+        stocks = list(collection.find(query, {"_id": 0}).skip(skip).limit(count))
+        total_count = collection.count_documents(query)
+        return {"stocks": stocks, "page": page, "count": total_count}
     else:
         return {"error": "No hay stocks disponibles."}
 
