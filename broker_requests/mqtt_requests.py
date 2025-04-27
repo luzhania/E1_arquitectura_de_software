@@ -35,20 +35,7 @@ def on_message(client, userdata, msg):
         if data.get("timestamp"):
             data["timestamp"] = parser.isoparse(data["timestamp"])
         
-        #si es IPO/EMIT
-        if data.get("kind") in ("IPO", "EMIT"):
-            event_data = {
-                "type": data["kind"],
-                "symbol": data["symbol"],
-                "quantity": data["quantity"],
-                "price": data["price"],
-                "longName": data.get("longName", ""),
-                "timestamp": data["timestamp"]
-            }
-            collection_event_log.insert_one(event_data)
-            print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
-            return
-        
+       
         # Si es request de compra
         if data.get("symbol"):
             request_data = {
