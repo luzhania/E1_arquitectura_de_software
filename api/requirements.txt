@@ -6,6 +6,7 @@ python-dotenv
 pydantic
 paho-mqtt
 newrelic
-python-jose[cryptography]
+# python-jose[cryptography]
+python-jose
 fastapi-auth0
 requests

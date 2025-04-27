@@ -8,12 +8,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
 from auth import verify_token
+from typing import Dict
+
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+URL_FRONTEND = os.getenv("URL_FRONTEND")
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://www.arquitecturadesoftware.me"],  # URL de tu frontend
+    allow_origins=[URL_FRONTEND],  # URL de tu frontend
     allow_credentials=True,
     allow_methods=["*"],  # Permite todos los métodos
     allow_headers=["*"],  # Permite todos los headers
@@ -74,7 +81,7 @@ def get_stock_detail(symbol: str, price: Optional[float] = None, quantity: Optio
 
 @app.post("/stocks/{symbol}/buy")
 def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
-    user_email = user["email"]
+    user_email = user["sub"]
     if quantity <= 0:
         return {"error": "La cantidad debe ser mayor que cero."} #quizas que las acciones que se quieran/puedan se vean en el frontend
     stock = collection.find_one({"symbol": symbol})
@@ -82,11 +89,11 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
         return {"error": f"Stock con símbolo {symbol} no encontrado."}
     if stock["quantity"] < quantity:
         return {"error": "No hay suficientes acciones disponibles."}
-    user = users_collection.find_one({"correo": user_email})
-    if not user:
-        return {"error": "Usuario no encontrado."}
-    if user["saldo"] < stock["price"] * quantity:
-        return {"error": "Saldo insuficiente."}
+    # user = users_collection.find_one({"correo": user_email})
+    # if not user:
+    #     return {"error": "Usuario no encontrado."}
+    # if user["saldo"] < stock["price"] * quantity:
+    #     return {"error": "Saldo insuficiente."}
 
     my_request_id = mqtt_manager.publish_buy_request(symbol, quantity)
     transaction = {
@@ -113,7 +120,7 @@ class LoginRequest(BaseModel):
     password: str
 
 class WalletRequest(BaseModel):
-    correo: str
+    # correo: str
     monto: float
 
 class BuyStockRequest(BaseModel):
@@ -149,44 +156,64 @@ def login_user(request: LoginRequest):
 
 
 @app.post("/wallet")
-def add_funds(request: WalletRequest):
-    if request.monto <= 0:
+def add_funds(monto: float, user: Dict = Depends(verify_token)):
+    correo = user["sub"]
+    if monto <= 0:
         return {"error": "El monto debe ser mayor que cero."}
     
-    user = users_collection.find_one({"correo": request.correo})
-    if not user:
-        return {"error": "Usuario no encontrado."}
-    users_collection.update_one(
-        {"correo": request.correo},
-        {"$set": {"saldo": user["saldo"] + request.monto}}
+    user_db = users_collection.find_one({"correo": correo})
+    if not user_db:
+        # Si el usuario no existe, lo creamos
+        users_collection.insert_one({
+            "correo": correo,
+            "saldo": monto
+        })
+        return {"message": "Usuario creado y fondos añadidos exitosamente.", "new_balance": monto}
+    else:
+        # Si el usuario existe, actualizamos su saldo
+        new_balance = user_db["saldo"] + monto
+        users_collection.update_one({"correo": correo}, {"$set": {"saldo": new_balance}})
+        return {"message": "Fondos añadidos exitosamente.", "new_balance": new_balance}
+
+    
+@app.get("/transactions")
+def get_transactions(user: Dict = Depends(verify_token), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
+    correo = user["sub"]
+    skip = (page - 1) * count
+    transactions = list(
+        transactions_collection.find({"user_email": correo}, {"_id": 0})
+        .skip(skip)
+        .limit(count)
     )
-    return {"message": "Fondos añadidos exitosamente.", "new_balance": user["saldo"] + request.monto}
-
-
-@app.get("/transactions/{user_email}")
-def get_transactions(user_email: str, page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
-    skip = (page - 1) * count
-    transactions = list(transactions_collection.find({"user_email": user_email}, {"_id": 0}).skip(skip).limit(count))
     
     if transactions:
         return {"transactions": transactions, "page": page, "count": count}
     else:
-        return {"error": f"No se encontraron transacciones para el usuario {user_email}."}
-    
-@app.get("/transactions/{user_email}/ok")
-def get_transactions_ok(user_email: str, page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
+        return {"error": f"No se encontraron transacciones para el usuario {correo}."}
+
+
+@app.get("/transactions/ok")
+def get_transactions_ok(user: Dict = Depends(verify_token), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
+    correo = user["sub"]
     skip = (page - 1) * count
-    transactions = list(transactions_collection.find({"user_email": user_email, "status": "OK"}, {"_id": 0}).skip(skip).limit(count))
+    transactions = list(
+        transactions_collection.find({"user_email": correo, "status": "OK"}, {"_id": 0})
+        .skip(skip)
+        .limit(count)
+    )
     
     if transactions:
         return {"transactions": transactions, "page": page, "count": count}
     else:
-        return {"error": f"No se encontraron transacciones OK para el usuario {user_email}."}
+        return {"error": f"No se encontraron transacciones OK para el usuario {correo}."}
 
-@app.get("/{user_email}")
-def get_user_info(user_email: str):
-    user = users_collection.find_one({"correo": user_email}, {"_id": 0})
-    if user:
-        return {"user": user}
+
+@app.get("/balance")
+def get_user_info(user: Dict = Depends(verify_token)):
+    correo = user["sub"]
+    user_db = users_collection.find_one({"correo": correo}, {"_id": 0})
+    
+    if user_db:
+        return {"user": user_db}
     else:
         return {"error": "Usuario no encontrado."}

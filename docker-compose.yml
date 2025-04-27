@@ -9,6 +9,7 @@ services:
       - .env
     volumes:
       - ./api:/app/api
+    restart: unless-stopped
 
   updates_broker:
     build:
@@ -22,7 +23,7 @@ services:
       - .env
     volumes:
       - ./broker_updates:/app/broker_updates
-    restart: always
+    restart: unless-stopped
 
   requests_broker:
     build:
@@ -36,7 +37,7 @@ services:
       - .env
     volumes:
       - ./broker_requests:/app/broker_requests
-    restart: always
+    restart: unless-stopped
 
   mongo:
     image: mongo:latest
@@ -45,7 +46,7 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-    restart: always
+    restart: unless-stopped
 
 volumes:
   mongo_data:
