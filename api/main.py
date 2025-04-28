@@ -20,7 +20,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://www.arquitecturadesoftware.me"],  # URL de tu frontend
+    allow_origins=[URL_FRONTEND] if URL_FRONTEND else ["*"],  # URL del frontend desde .env
     allow_credentials=True,
     allow_methods=["*"],  # Permite todos los métodos
     allow_headers=["*"],  # Permite todos los headers
@@ -227,7 +227,53 @@ def get_event_log(symbol: str, page: int = Query(1, ge=1), count: int = Query(25
     else:
         return {"error": f"No se encontraron eventos para el símbolo {symbol}."}
 
-
+@app.get("/events/all")  # Cambio de ruta para evitar conflictos
+def get_all_event_logs(
+    symbol: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    page: int = Query(1, ge=1), 
+    count: int = Query(25, ge=1)
+):
+    skip = (page - 1) * count
+    query = {}
+    
+    # Add optional filters
+    if symbol:
+        query["symbol"] = {"$regex": f"^{symbol}", "$options": "i"}
+    
+    # Handle date range filtering
+    if from_date or to_date:
+        query["timestamp"] = {}
+        if from_date:
+            try:
+                dt_from = datetime.fromisoformat(from_date)
+                start = datetime(dt_from.year, dt_from.month, dt_from.day, 0, 0, 0)
+                query["timestamp"]["$gte"] = start
+            except ValueError:
+                return {"error": "from_date debe tener el formato 'YYYY-MM-DD'"}
+                
+        if to_date:
+            try:
+                dt_to = datetime.fromisoformat(to_date)
+                end = datetime(dt_to.year, dt_to.month, dt_to.day, 23, 59, 59)
+                query["timestamp"]["$lte"] = end
+            except ValueError:
+                return {"error": "to_date debe tener el formato 'YYYY-MM-DD'"}
+    
+    events = list(collection_event_log.find(query, {"_id": 0}).skip(skip).limit(count))
+    total_count = collection_event_log.count_documents(query)
+    
+    # Cambio en la estructura de respuesta para que sea igual que get_event_log
+    if events:
+        return {
+            "event_log": events,
+            "page": page,
+            "count": len(events),
+            "total": total_count
+        }
+    else:
+        return {"error": "No se encontraron eventos con los filtros especificados."}
 
 @app.post("/register")
 def register_user(request: RegisterUserRequest):
