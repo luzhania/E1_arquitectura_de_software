@@ -176,11 +176,11 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
         return {"error": f"Stock con símbolo {symbol} no encontrado."}
     if stock["quantity"] < quantity:
         return {"error": "No hay suficientes acciones disponibles."}
-    # user = users_collection.find_one({"correo": user_email})
-    # if not user:
-    #     return {"error": "Usuario no encontrado."}
-    # if user["saldo"] < stock["price"] * quantity:
-    #     return {"error": "Saldo insuficiente."}
+    user = users_collection.find_one({"correo": user_email})
+    if not user:
+        return {"error": "Usuario no encontrado."}
+    if user["saldo"] < stock["price"] * quantity:
+        return {"error": "Saldo insuficiente."}
 
     my_request_id = mqtt_manager.publish_buy_request(symbol, quantity)
     transaction = {
@@ -275,34 +275,6 @@ def get_all_event_logs(
     else:
         return {"error": "No se encontraron eventos con los filtros especificados."}
 
-@app.post("/register")
-def register_user(request: RegisterUserRequest):
-    if users_collection.find_one({"correo": request.correo}):
-        return {"error": "El correo ya está registrado."}
-    elif not request.correo or not request.password or not request.telefono or not request.nombre:
-        return {"error": "Todos los campos son obligatorios."}
-    
-    user = {
-        "correo": request.correo,
-        "password": request.password,
-        "telefono": request.telefono,
-        "nombre": request.nombre,
-        "saldo": 0.0,
-        "updated_at": datetime.utcnow()
-    }
-    users_collection.insert_one(user)
-    return {"message": "Usuario registrado exitosamente.", "user": {"correo": request.correo, "nombre": request.nombre}}
-
-
-@app.post("/login")
-def login_user(request: LoginRequest):
-    user = users_collection.find_one({"correo": request.correo, "password": request.password})
-    if user:
-        return {"message": "Inicio de sesión exitoso.", "user": {"correo": request.correo, "nombre": user["nombre"]}}
-    else:
-        return {"error": "Credenciales incorrectas."}
-
-
 @app.post("/wallet")
 def add_funds(monto: float, user: Dict = Depends(verify_token)):
     correo = user["sub"]
@@ -369,14 +341,3 @@ def get_transactions_ok(user: Dict = Depends(verify_token), page: int = Query(1,
         return {"transactions": transactions, "page": page, "count": count}
     else:
         return {"error": f"No se encontraron transacciones OK para el usuario {correo}."}
-
-
-@app.get("/balance")
-def get_user_info(user: Dict = Depends(verify_token)):
-    correo = user["sub"]
-    user_db = users_collection.find_one({"correo": correo}, {"_id": 0})
-    
-    if user_db:
-        return {"user": user_db}
-    else:
-        return {"error": "Usuario no encontrado."}
