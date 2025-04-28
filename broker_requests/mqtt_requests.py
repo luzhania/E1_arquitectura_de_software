@@ -23,6 +23,7 @@ collection_stocks = db["current_stocks"]
 collection_transactions = db["transactions"]
 collection_users = db["users"]
 collection_event_log = db["event_log"]
+collection_rough_requests = db["rough_requests"]
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
@@ -35,6 +36,7 @@ def on_message(client, userdata, msg):
         if data.get("timestamp"):
             data["timestamp"] = parser.isoparse(data["timestamp"])
         
+        collection_rough_requests.insert_one(data)
        
         # Si es request de compra
         if data.get("symbol"):

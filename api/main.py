@@ -3,7 +3,6 @@ from typing import Optional
 from datetime import datetime
 from database import get_db
 from buy_requests.buy_requests import mqtt_manager 
-from routes import router
 from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel
 from datetime import datetime
@@ -25,8 +24,6 @@ app.add_middleware(
     allow_methods=["*"],  # Permite todos los métodos
     allow_headers=["*"],  # Permite todos los headers
 )
-
-app.include_router(router)
 
 db = get_db()
 collection = db["current_stocks"]
