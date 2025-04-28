@@ -18,11 +18,11 @@ MONGO_URI = os.getenv("MONGO_URI")
 
 client_mongo = MongoClient(MONGO_URI)
 db = client_mongo["stocks_db"] 
-collection_requests = db["requests"]####
-collection_stocks = db["current_stocks"]####
-collection_transactions = db["transactions"]####
-collection_users = db["users"]####
-collection_event_log = db["event_log"]####
+collection_requests = db["requests"]
+collection_stocks = db["current_stocks"]
+collection_transactions = db["transactions"]
+collection_users = db["users"]
+collection_event_log = db["event_log"]
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
@@ -91,7 +91,7 @@ def on_message(client, userdata, msg):
                 if stock_result:
                     if status == "ACCEPTED":
                         # // Actualizar stock en la colección de stocks, decrementando la cantidad si es posible
-                        new_quantity = stock_result["quantity"] - request_result["quantity"]
+                        new_quantity = int(stock_result["quantity"]) - int(request_result["quantity"])
                         if new_quantity >= 0:
                             collection_stocks.update_one(
                                 {"symbol": request_result["symbol"]},
