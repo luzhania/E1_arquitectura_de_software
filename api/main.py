@@ -194,25 +194,6 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
     result = transactions_collection.insert_one(transaction)
     transaction["_id"] = str(result.inserted_id)
     return {"message": "Solicitud de compra exitosa.", "transaction": transaction}
-    # return {"message": "Solicitud de compra exitosa."}
-
-class RegisterUserRequest(BaseModel):
-    correo: str
-    password: str
-    telefono: str
-    nombre: str
-
-class LoginRequest(BaseModel):
-    correo: str
-    password: str
-
-class WalletRequest(BaseModel):
-    # correo: str
-    monto: float
-
-class BuyStockRequest(BaseModel):
-    quantity: int
-    user_email: str
 
 #historial de transacciones
 @app.get("/stocks/{symbol}/event_log")
