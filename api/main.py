@@ -164,8 +164,8 @@ def get_stock_detail(symbol: str, price: Optional[float] = None, quantity: Optio
 
 @app.post("/stocks/{symbol}/buy")
 def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
-    user_email = user["sub"]
-    print(f"User email: {user_email}")
+    user_id = user["sub"]
+    print(f"User email: {user_id}")
     if quantity <= 0:
         return {"error": "La cantidad debe ser mayor que cero."} #quizas que las acciones que se quieran/puedan se vean en el frontend
     stock = collection.find_one({"symbol": symbol})
@@ -173,7 +173,7 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
         return {"error": f"Stock con símbolo {symbol} no encontrado."}
     if stock["quantity"] < quantity:
         return {"error": "No hay suficientes acciones disponibles."}
-    user = users_collection.find_one({"correo": user_email})
+    user = users_collection.find_one({"correo": user_id})
     if not user:
         return {"error": "Usuario no encontrado."}
     if user["saldo"] < stock["price"] * quantity:
@@ -184,7 +184,7 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
         "request_id": my_request_id,
         "symbol": symbol,
         "quantity": quantity,
-        "user_email": user_email,
+        "user_email": user_id,
         "timestamp": datetime.utcnow(),
         "status": "PENDING"
     }
@@ -255,32 +255,32 @@ def get_all_event_logs(
 
 @app.post("/wallet")
 def add_funds(monto: float, user: Dict = Depends(verify_token)):
-    correo = user["sub"]
+    user_id = user["sub"]
     if monto <= 0:
         return {"error": "El monto debe ser mayor que cero."}
     
-    user_db = users_collection.find_one({"correo": correo})
+    user_db = users_collection.find_one({"correo": user_id})
     if not user_db:
         # Si el usuario no existe, lo creamos
         users_collection.insert_one({
-            "correo": correo,
+            "correo": user_id,
             "saldo": monto
         })
         return {"message": "Usuario creado y fondos añadidos exitosamente.", "new_balance": monto}
     else:
         # Si el usuario existe, actualizamos su saldo
         new_balance = user_db["saldo"] + monto
-        users_collection.update_one({"correo": correo}, {"$set": {"saldo": new_balance}})
+        users_collection.update_one({"correo": user_id}, {"$set": {"saldo": new_balance}})
         return {"message": "Fondos añadidos exitosamente.", "new_balance": new_balance}
 
 @app.get("/wallet")
 def get_wallet(user: Dict = Depends(verify_token)):
-    correo = user["sub"]
+    user_id = user["sub"]
     
-    user_db = users_collection.find_one({"correo": correo})
+    user_db = users_collection.find_one({"correo": user_id})
     if user_db:
         return {
-            "correo": correo, 
+            "correo": user_id, 
             "saldo": user_db.get("saldo", 0)
         }
     else:
@@ -289,28 +289,28 @@ def get_wallet(user: Dict = Depends(verify_token)):
     
 @app.get("/transactions")
 def get_transactions(user: Dict = Depends(verify_token), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
-    correo = user["sub"]
-    print(f"User email: {correo}")
+    user_id = user["sub"]
+    print(f"User email: {user_id}")
     skip = (page - 1) * count
     transactions = list(
-        transactions_collection.find({"user_email": correo}, {"_id": 0})
+        transactions_collection.find({"user_email": user_id}, {"_id": 0})
         .skip(skip)
         .limit(count)
     )
     
     if transactions:
-        total_transactions = transactions_collection.count_documents({"user_email": correo})
+        total_transactions = transactions_collection.count_documents({"user_email": user_id})
         return {"stocks": transactions, "page": page, "count": count, "total_transactions": total_transactions}
     else:
-        return {"error": f"No se encontraron transacciones para el usuario {correo}."}
+        return {"error": f"No se encontraron transacciones para el usuario {user_id}."}
 
 
 @app.get("/transactions/ok")
 def get_transactions_ok(user: Dict = Depends(verify_token), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
-    correo = user["sub"]
+    user_id = user["sub"]
     skip = (page - 1) * count
     transactions = list(
-        transactions_collection.find({"user_email": correo, "status": "OK"}, {"_id": 0})
+        transactions_collection.find({"user_email": user_id, "status": "OK"}, {"_id": 0})
         .skip(skip)
         .limit(count)
     )
@@ -318,4 +318,4 @@ def get_transactions_ok(user: Dict = Depends(verify_token), page: int = Query(1,
     if transactions:
         return {"transactions": transactions, "page": page, "count": count}
     else:
-        return {"error": f"No se encontraron transacciones OK para el usuario {correo}."}
+        return {"error": f"No se encontraron transacciones OK para el usuario {user_id}."}
