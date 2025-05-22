@@ -8,6 +8,11 @@ from pydantic import BaseModel
 from datetime import datetime
 from auth import verify_token
 from typing import Dict
+from fastapi.responses import JSONResponse
+from fastapi.responses import RedirectResponse
+from fastapi import Request
+import utils.transbank as tx
+import uuid
 
 import os
 from dotenv import load_dotenv
@@ -31,6 +36,9 @@ transactions_collection = db["transactions"]
 users_db = get_db()
 users_collection = users_db["users"]
 collection_event_log = db["event_log"]
+
+# Inicializar el cliente de Transbank
+# tx_client = tx.get_tx()
 
 
 @app.get("/")
@@ -191,6 +199,52 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
     result = transactions_collection.insert_one(transaction)
     transaction["_id"] = str(result.inserted_id)
     return {"message": "Solicitud de compra exitosa.", "transaction": transaction}
+
+@app.post("/webpay/create")
+def iniciar_webpay(data: dict, user=Depends(verify_token)):
+    user_id = user["sub"]
+    user = users_collection.find_one({"correo": user_id})
+    if not user:
+        return {"error": "Usuario no encontrado."}
+    stock = collection.find_one({"symbol": data["symbol"]})
+    if not stock:
+        return {"error": f"Stock con símbolo {data['symbol']} no encontrado."}
+    if stock["quantity"] < data["quantity"]:
+        return {"error": "No hay suficientes acciones disponibles."}
+    transaction_id = str(uuid.uuid4())[:26]
+    trx_resp = tx.get_tx().create(transaction_id, "stocks_buy", round(float(data["amount"])), "http://localhost:5173/payment")
+    # "https://www.arquitecturadesoftware.me/payment"
+
+    transaction = {
+        "request_id": transaction_id,
+        "token_ws": trx_resp["token"],
+        "symbol": data["symbol"],
+        "quantity": data["quantity"],
+        "user_email": user_id,
+        "timestamp": datetime.utcnow(),
+        "status": "PENDING",
+    }
+
+    transactions_collection.insert_one(transaction)
+    return {"url": trx_resp["url"], "token_ws": trx_resp["token"], "transaction_id": transaction_id}
+
+@app.post("/webpay/commit")
+async def commit_transaction(request: Request, user=Depends(verify_token)):
+    body = await request.json()
+    token_ws = body.get("token_ws")
+
+    print(f"Token_ws: {token_ws}")
+    if not token_ws or token_ws == "":
+        return {"message": "Transacción anulada por el usuario."}
+
+    try:
+        response = tx.get_tx().commit(token_ws)
+        if response["response_code"] != 0:
+            return {"message": "Transacción ha sido rechazada."}
+        return {"message": "Transacción ha sido autorizada."}
+    except Exception as e:
+        print("Error en la transacción:", e)
+        return {"message": "Error en la transacción."}
 
 #historial de transacciones
 @app.get("/stocks/{symbol}/event_log")

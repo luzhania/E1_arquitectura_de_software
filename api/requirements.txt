@@ -10,3 +10,5 @@ newrelic
 python-jose
 fastapi-auth0
 requests
+transbank-sdk
+python-multipart
