@@ -21,8 +21,6 @@ db = client_mongo["stocks_db"]
 collection_stocks = db["current_stocks"]
 collection_event_log = db["event_log"]
 
-collection_rough_updates = db["rough_updates"]
-
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
     client.subscribe(TOPIC)
@@ -33,8 +31,6 @@ def on_message(client, userdata, msg):
         data = json.loads(msg.payload.decode("utf-8"))
         if data.get("timestamp"):
             data["timestamp"] = parser.isoparse(data["timestamp"])
-
-        collection_rough_updates.insert_one(data)
 
         kind = data.get("kind")
         symbol = data.get("symbol")

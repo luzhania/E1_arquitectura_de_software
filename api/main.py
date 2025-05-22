@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse
 from fastapi import Request
 import utils.transbank as tx
 import uuid
+import base64
 
 import os
 from dotenv import load_dotenv
@@ -187,9 +188,10 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
     if user["saldo"] < stock["price"] * quantity:
         return {"error": "Saldo insuficiente."}
 
-    my_request_id = mqtt_manager.publish_buy_request(symbol, quantity)
+    transaction_id = str(uuid.uuid4())
+    mqtt_manager.publish_buy_request(transaction_id, symbol, quantity)
     transaction = {
-        "request_id": my_request_id,
+        "request_id": transaction_id,
         "symbol": symbol,
         "quantity": quantity,
         "user_email": user_id,
@@ -211,12 +213,22 @@ def iniciar_webpay(data: dict, user=Depends(verify_token)):
         return {"error": f"Stock con símbolo {data['symbol']} no encontrado."}
     if stock["quantity"] < data["quantity"]:
         return {"error": "No hay suficientes acciones disponibles."}
-    transaction_id = str(uuid.uuid4())[:26]
-    trx_resp = tx.get_tx().create(transaction_id, "stocks_buy", round(float(data["amount"])), "http://localhost:5173/payment")
-    # "https://www.arquitecturadesoftware.me/payment"
+    
+    id = uuid.uuid4()
 
+    b64 = base64.urlsafe_b64encode(id.bytes).decode('utf-8').rstrip('=')
+    transaction_id = b64[:26]
+
+    request_id = str(id)
+    amount = round(float(data["amount"]))
+    
+    trx_resp = tx.get_tx().create(transaction_id, "stocks_buy", amount, "http://localhost:5173/payment")
+    
+    # "https://www.arquitecturadesoftware.me/payment"
+    mqtt_manager.publish_buy_request(request_id, data["symbol"], data["quantity"], trx_resp["token"])
     transaction = {
-        "request_id": transaction_id,
+        "request_id": request_id,
+        "transaction_id": transaction_id,
         "token_ws": trx_resp["token"],
         "symbol": data["symbol"],
         "quantity": data["quantity"],
@@ -226,22 +238,27 @@ def iniciar_webpay(data: dict, user=Depends(verify_token)):
     }
 
     transactions_collection.insert_one(transaction)
-    return {"url": trx_resp["url"], "token_ws": trx_resp["token"], "transaction_id": transaction_id}
+    return {"url": trx_resp["url"], "token_ws": trx_resp["token"], "request_id": request_id}
 
 @app.post("/webpay/commit")
 async def commit_transaction(request: Request, user=Depends(verify_token)):
+    print("comit_llamado")
     body = await request.json()
     token_ws = body.get("token_ws")
 
     print(f"Token_ws: {token_ws}")
     if not token_ws or token_ws == "":
+        mqtt_manager.publish_validation(body.get("request_id"), "REJECTED")
         return {"message": "Transacción anulada por el usuario."}
 
     try:
         response = tx.get_tx().commit(token_ws)
+        response_status = "ACCEPTED" if response["response_code"] == 0 else "REJECTED"
+        mqtt_manager.publish_validation(body.get("request_id"), response_status)
+
         if response["response_code"] != 0:
             return {"message": "Transacción ha sido rechazada."}
-        return {"message": "Transacción ha sido autorizada."}
+        return {"message": "Transacción ha sido autorizada.", "transaction_id": response["buy_order"]}
     except Exception as e:
         print("Error en la transacción:", e)
         return {"message": "Error en la transacción."}

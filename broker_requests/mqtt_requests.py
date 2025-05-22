@@ -10,7 +10,8 @@ load_dotenv()
 
 BROKER_HOST = os.getenv("MQTT_BROKER")
 BROKER_PORT = int(os.getenv("MQTT_PORT"))
-TOPIC = "stocks/requests"
+REQUEST_TOPIC = "stocks/requests"
+VALIDATION_TOPIC = "stocks/validation"
 MQTT_USER = os.getenv("MQTT_USER")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
@@ -23,11 +24,12 @@ collection_stocks = db["current_stocks"]
 collection_transactions = db["transactions"]
 collection_users = db["users"]
 collection_event_log = db["event_log"]
-collection_rough_requests = db["rough_requests"]
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
-    client.subscribe(TOPIC)
+    client.subscribe(REQUEST_TOPIC)
+    client.subscribe(VALIDATION_TOPIC)
+
 
 def on_message(client, userdata, msg):
     print(f"Mensaje recibido en {msg.topic}: {msg.payload.decode()}")
@@ -35,16 +37,45 @@ def on_message(client, userdata, msg):
     try:
         data = json.loads(msg.payload.decode("utf-8"))
         handle_timestamp(data)
-        collection_rough_requests.insert_one(data)
-
-        if is_purchase_request(data):
-            handle_purchase_request(data)
-        elif is_response(data):
-            handle_response(data)
+        if msg.topic == REQUEST_TOPIC:
+            if is_purchase_request(data):
+                handle_purchase_request(data)
+            elif is_response(data):
+                handle_response(data)
+        elif msg.topic == VALIDATION_TOPIC:
+            handle_validation(data)
 
     except json.JSONDecodeError as e:
         print("Error al decodificar el JSON:", e)
 
+def handle_validation(data):
+    request_id = data.get("request_id")
+    status = data.get("status")
+    timestamp = data["timestamp"]
+
+    if not request_id:
+        print("Ignorando response sin request_id:", data)
+        return
+
+    request_result = collection_requests.find_one({"request_id": request_id})
+    if not request_result:
+        print(f"Request no encontrada: {request_id}")
+        return
+
+    update_request_status(request_id, status, timestamp)
+    update_transaction_status(request_id, status, timestamp)
+    
+    stock_result = collection_stocks.find_one({"symbol": request_result["symbol"]})
+
+    if not stock_result:
+        print(f"Stock {request_result['symbol']} no encontrado.")
+        return
+
+    if status == "ACCEPTED":
+        handle_accepted_response(request_result, stock_result, timestamp)
+        
+    elif status == "REJECTED":
+        handle_rejected_response(request_result, stock_result, timestamp)
 
 def handle_timestamp(data):
     if data.get("timestamp"):
@@ -68,6 +99,7 @@ def handle_purchase_request(data):
         "operation": data.get("operation", "BUY"),
         "status": "PENDING",
         "applied": False,
+        "deposit_token": data.get("deposit_token", ""),
     }
     collection_requests.insert_one(request_data)
     print(f"Request registrada: {request_data}")
@@ -98,9 +130,12 @@ def handle_response(data):
         return
 
     if status == "ACCEPTED":
-        handle_accepted_response(request_result, stock_result, user_transaction, timestamp)
+        handle_accepted_response(request_result, stock_result, timestamp)
+        update_user_wallet(user_transaction, -request_result["quantity"] * stock_result["price"], timestamp)
+        
     elif status == "REJECTED":
-        handle_rejected_response(request_result, stock_result, user_transaction, timestamp)
+        handle_rejected_response(request_result, stock_result, timestamp)
+        update_user_wallet(user_transaction, request_result["quantity"] * stock_result["price"], timestamp)
 
 
 def update_request_status(request_id, status, timestamp):
@@ -121,7 +156,7 @@ def update_transaction_status(request_id, status, timestamp):
         print(f"Transacción actualizada: {request_id} | Nuevo estado: {status}")
 
 
-def handle_accepted_response(request, stock, transaction, timestamp):
+def handle_accepted_response(request, stock, timestamp):
     new_quantity = stock["quantity"] - request["quantity"]
     if new_quantity < 0:
         print(f"No hay suficiente cantidad de {request['symbol']} para completar la solicitud.")
@@ -137,13 +172,10 @@ def handle_accepted_response(request, stock, transaction, timestamp):
     )
     print(f"Stock actualizado: {request['symbol']} | Nueva cantidad: {new_quantity}")
 
-    if transaction:
-        update_user_wallet(transaction["user_email"], -request["quantity"] * stock["price"], timestamp)
-
     log_event("BUY", request, stock["price"], timestamp)
 
 
-def handle_rejected_response(request, stock, transaction, timestamp):
+def handle_rejected_response(request, stock, timestamp):
     if request["applied"]:
         new_quantity = stock["quantity"] + request["quantity"]
         collection_stocks.update_one(
@@ -151,9 +183,6 @@ def handle_rejected_response(request, stock, transaction, timestamp):
             {"$set": {"quantity": new_quantity, "timestamp": timestamp}}
         )
         print(f"Stock actualizado: {request['symbol']} | Nueva cantidad: {new_quantity}")
-
-        if transaction:
-            update_user_wallet(transaction["user_email"], request["quantity"] * stock["price"], timestamp)
     else:
         collection_requests.update_one(
             {"request_id": request["request_id"]},
@@ -161,7 +190,12 @@ def handle_rejected_response(request, stock, transaction, timestamp):
         )
 
 
-def update_user_wallet(user_id, balance_change, timestamp):
+def update_user_wallet(transaction, balance_change, timestamp):
+    if not transaction:
+        print("Transacción no encontrada.")
+        return
+    
+    user_id = transaction.get("user_email")
     user = collection_users.find_one({"correo": user_id})
     if not user:
         print(f"Usuario {user_id} no encontrado.")

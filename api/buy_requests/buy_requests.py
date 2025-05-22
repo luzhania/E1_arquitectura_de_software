@@ -11,6 +11,7 @@ load_dotenv()
 BROKER_HOST    = os.getenv("MQTT_BROKER")
 BROKER_PORT    = int(os.getenv("MQTT_PORT"))
 TOPIC_REQUESTS = "stocks/requests"
+TOPIC_VALIDATION = "stocks/validation"
 MQTT_USER      = os.getenv("MQTT_USER")
 MQTT_PASSWORD  = os.getenv("MQTT_PASSWORD")
 
@@ -23,23 +24,35 @@ class MQTTManager:
         self.client.connect(BROKER_HOST, BROKER_PORT, keepalive=60)
         self.client.loop_start()
 
-    def publish_buy_request(self, symbol: str, quantity: int) -> str:
+    def publish_buy_request(self, transaction_id: str, symbol: str, quantity: int, deposit_token: str = "") -> str:
         """
         Publica una solicitud de compra en stocks/requests y
         devuelve el request_id (UUIDv4).
         """
-        request_id = str(uuid.uuid4())
         payload = {
-            "request_id": request_id,
+            "request_id": transaction_id,
             "group_id": self.group_id,
             # "timestamp": str(datetime.now(timezone.utc).isoformat()),
             "quantity": quantity,
             "symbol": symbol,
             # "stock_origin": 0,
-            "operation": "BUY"
+            "operation": "BUY",
+            "deposit_token": deposit_token
         }
         self.client.publish(TOPIC_REQUESTS, json.dumps(payload), qos=1)
         print(f"[MQTT] Publicada solicitud BUY: {payload}")
-        return request_id
+    
+    def publish_validation(self, request_id: str, status_transaction: str):
+        """
+        Publica una validación de compra en stocks/validation.
+        """
+        payload = {
+            "request_id": request_id,
+            "timestamp": str(datetime.now(timezone.utc).isoformat()),
+            "status": status_transaction,
+            "reason":""
+        }
+        self.client.publish(TOPIC_VALIDATION, json.dumps(payload), qos=0)
+        print(f"[MQTT] Publicada validación: {payload}")
 
 mqtt_manager = MQTTManager(group_id="27")
