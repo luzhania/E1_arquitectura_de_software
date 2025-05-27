@@ -37,12 +37,12 @@ class MQTTManager:
             "symbol": symbol,
             # "stock_origin": 0,
             "operation": "BUY",
-            "deposit_token": deposit_token
+            # "deposit_token": deposit_token
         }
         self.client.publish(TOPIC_REQUESTS, json.dumps(payload), qos=1)
         print(f"[MQTT] Publicada solicitud BUY: {payload}")
     
-    def publish_validation(self, request_id: str, status_transaction: str):
+    def publish_validation(self, request_id: str, status_transaction: str, deposit_token: str = "") -> None:
         """
         Publica una validación de compra en stocks/validation.
         """
@@ -50,7 +50,8 @@ class MQTTManager:
             "request_id": request_id,
             "timestamp": str(datetime.now(timezone.utc).isoformat()),
             "status": status_transaction,
-            "reason":""
+            "reason":"",
+            "deposit_token": deposit_token
         }
         self.client.publish(TOPIC_VALIDATION, json.dumps(payload), qos=0)
         print(f"[MQTT] Publicada validación: {payload}")

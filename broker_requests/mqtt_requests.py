@@ -71,10 +71,9 @@ def handle_validation(data):
         print(f"Stock {request_result['symbol']} no encontrado.")
         return
 
-    if status == "ACCEPTED":
-        handle_accepted_response(request_result, stock_result, timestamp)
+    #En caso de ser aceptada la reserva se realiza por la aceptación desde el canal requests
         
-    elif status == "REJECTED":
+    if status == "REJECTED":
         handle_rejected_response(request_result, stock_result, timestamp)
 
 def handle_timestamp(data):

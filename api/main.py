@@ -227,6 +227,7 @@ def iniciar_webpay(data: dict, user=Depends(verify_token)):
     
     # "https://www.arquitecturadesoftware.me/payment"
     mqtt_manager.publish_buy_request(request_id, data["symbol"], data["quantity"], trx_resp["token"])
+    mqtt_manager.publish_validation(request_id, "ACCEPTED", trx_resp["token"])
     transaction = {
         "request_id": request_id,
         "transaction_id": transaction_id,
@@ -245,24 +246,28 @@ def iniciar_webpay(data: dict, user=Depends(verify_token)):
 async def commit_transaction(request: Request, user=Depends(verify_token)):
     body = await request.json()
     token_ws = body.get("token_ws")
+    transaction = transactions_collection.find_one({"request_id": body.get("request_id")})
 
-    print(f"Token_ws: {token_ws}")
+    # TRANSACCIÓN ANULADA POR EL USUARIO
     if not token_ws or token_ws == "":
-        mqtt_manager.publish_validation(body.get("request_id"), "REJECTED")
-        return {"message": "Transacción anulada por el usuario."}
+        mqtt_manager.publish_validation(body.get("request_id"), "REJECTED", transaction["token_ws"]) #Token enviado cuando fue accepted
+        return {"status": "ANULLED",
+                "message": "Transacción anulada por el usuario."}
 
     try:
         response = tx.get_tx().commit(token_ws)
 
-        response_status = "ACCEPTED" if response["response_code"] == 0 else "REJECTED"
-        mqtt_manager.publish_validation(body.get("request_id"), response_status)
+        response_status = "OK" if response["response_code"] == 0 else "REJECTED"
+        mqtt_manager.publish_validation(body.get("request_id"), response_status, transaction["token_ws"])
 
+        # TRANSACCIÓN RECHAZADA
         if response["response_code"] != 0:
-            return {"message": "Transacción ha sido rechazada.",
-                    "status":"REJECTED"}
+            return {"status":"REJECTED",
+                    "message": "Transacción ha sido rechazada.",
+                    }
         
+        # TRANSACCIÓN ACEPTADA
         #Generación de boleta
-        transaction = transactions_collection.find_one({"request_id": body.get("request_id")})
         receipt_url = purchase_receip.generate_receipt(
             user_data={"email": user["sub"]},
             stock_data={
@@ -277,15 +282,15 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
             {"$set": {"receipt_url": receipt_url}}
         )
 
-        return {"message": "Transacción ha sido autorizada.",
-                "status": "OK",
+        return {"status": "OK",
+                "message": "Transacción ha sido autorizada.",
                 "transaction_id": response["buy_order"],
                 "receipt_url": receipt_url}
     
     except Exception as e:
         print("Error en la transacción:", e)
-        return {"message": "Error en la transacción.",
-                "status": "ERROR",}
+        return {"status": "ERROR",
+                "message": "Error en la transacción."}
 
 #historial de transacciones
 @app.get("/stocks/{symbol}/event_log")
@@ -394,8 +399,8 @@ def get_transactions(user: Dict = Depends(verify_token), page: int = Query(1, ge
     )
     
     if transactions:
-        total_transactions = transactions_collection.count_documents({"user_email": user_id})
-        return {"stocks": transactions, "page": page, "count": count, "total_transactions": total_transactions}
+        total_count = transactions_collection.count_documents({"user_email": user_id})
+        return {"stocks": transactions, "page": page, "count": total_count}
     else:
         return {"error": f"No se encontraron transacciones para el usuario {user_id}."}
 
