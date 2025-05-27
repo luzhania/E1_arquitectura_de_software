@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from fastapi import Request
 import utils.transbank as tx
+import utils.purchase_receip as purchase_receip
 import uuid
 import base64
 
@@ -242,7 +243,6 @@ def iniciar_webpay(data: dict, user=Depends(verify_token)):
 
 @app.post("/webpay/commit")
 async def commit_transaction(request: Request, user=Depends(verify_token)):
-    print("comit_llamado")
     body = await request.json()
     token_ws = body.get("token_ws")
 
@@ -253,15 +253,39 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
 
     try:
         response = tx.get_tx().commit(token_ws)
+
         response_status = "ACCEPTED" if response["response_code"] == 0 else "REJECTED"
         mqtt_manager.publish_validation(body.get("request_id"), response_status)
 
         if response["response_code"] != 0:
-            return {"message": "Transacción ha sido rechazada."}
-        return {"message": "Transacción ha sido autorizada.", "transaction_id": response["buy_order"]}
+            return {"message": "Transacción ha sido rechazada.",
+                    "status":"REJECTED"}
+        
+        #Generación de boleta
+        transaction = transactions_collection.find_one({"request_id": body.get("request_id")})
+        receipt_url = purchase_receip.generate_receipt(
+            user_data={"email": user["sub"]},
+            stock_data={
+                "name": transaction["symbol"],
+                "quantity": transaction["quantity"],
+                "total": response["amount"]
+            }
+        )
+        # modificar transaccion con receipt_url
+        transactions_collection.update_one(
+            {"request_id": body.get("request_id")},
+            {"$set": {"receipt_url": receipt_url}}
+        )
+
+        return {"message": "Transacción ha sido autorizada.",
+                "status": "OK",
+                "transaction_id": response["buy_order"],
+                "receipt_url": receipt_url}
+    
     except Exception as e:
         print("Error en la transacción:", e)
-        return {"message": "Error en la transacción."}
+        return {"message": "Error en la transacción.",
+                "status": "ERROR",}
 
 #historial de transacciones
 @app.get("/stocks/{symbol}/event_log")
