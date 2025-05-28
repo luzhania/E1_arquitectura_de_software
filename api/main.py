@@ -223,9 +223,10 @@ def iniciar_webpay(data: dict, user=Depends(verify_token)):
     request_id = str(id)
     amount = round(float(data["amount"]))
     
-    trx_resp = tx.get_tx().create(transaction_id, "stocks_buy", amount, "http://localhost:5173/payment")
+    # Build the frontend payment URL from the environment variable
+    frontend_payment_url = f"{URL_FRONTEND}/payment" if URL_FRONTEND else "https://www.arquitecturadesoftware.me/payment"
+    trx_resp = tx.get_tx().create(transaction_id, "stocks_buy", amount, frontend_payment_url)
     
-    # "https://www.arquitecturadesoftware.me/payment"
     mqtt_manager.publish_buy_request(request_id, data["symbol"], data["quantity"], trx_resp["token"])
     mqtt_manager.publish_validation(request_id, "ACCEPTED", trx_resp["token"])
     transaction = {
@@ -251,7 +252,7 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
     # TRANSACCIÓN ANULADA POR EL USUARIO
     if not token_ws or token_ws == "":
         mqtt_manager.publish_validation(body.get("request_id"), "REJECTED", transaction["token_ws"]) #Token enviado cuando fue accepted
-        return {"status": "ANULLED",
+        return {"status": "CANCEL",
                 "message": "Transacción anulada por el usuario."}
 
     try:
