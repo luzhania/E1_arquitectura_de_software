@@ -2,8 +2,19 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uuid
 from celery import Celery
+from fastapi.middleware.cors import CORSMiddleware 
 
 app = FastAPI()
+
+# ⬇️ CORS middleware aquí
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 celery_app = Celery("jobmaster", broker="redis://redis:6379/0")
 
 class JobData(BaseModel):
