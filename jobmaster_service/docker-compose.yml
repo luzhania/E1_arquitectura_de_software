@@ -1,0 +1,25 @@
+version: "3.9"
+services:
+  redis:
+    image: redis:7
+    container_name: redis-broker
+    ports:
+      - "6379:6379"
+
+  jobmaster:
+    build: ./jobmaster
+    container_name: jobmaster-api
+    ports:
+      - "8000:8000"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  worker:
+    build: ./worker
+    container_name: celery-worker
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
