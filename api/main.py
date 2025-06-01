@@ -251,7 +251,7 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
 
     # TRANSACCIÓN ANULADA POR EL USUARIO
     if not token_ws or token_ws == "":
-        mqtt_manager.publish_validation(body.get("request_id"), "REJECTED", transaction["token_ws"]) #Token enviado cuando fue accepted
+        mqtt_manager.publish_validation(body.get("request_id"), "REJECTED", transaction["token_ws"])
         return {"status": "CANCEL",
                 "message": "Transacción anulada por el usuario."}
 
@@ -283,10 +283,24 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
             {"$set": {"receipt_url": receipt_url}}
         )
 
-        return {"status": "OK",
-                "message": "Transacción ha sido autorizada.",
-                "transaction_id": response["buy_order"],
-                "receipt_url": receipt_url}
+        # INCLUIR MÁS INFORMACIÓN EN LA RESPUESTA
+        return {
+            "status": "OK",
+            "message": "Transacción ha sido autorizada.",
+            "transaction_id": response["buy_order"],
+            "receipt_url": receipt_url,
+            # AGREGAR ESTOS CAMPOS:
+            "symbol": transaction["symbol"],
+            "quantity": transaction["quantity"],
+            "amount": response["amount"],
+            "transaction_data": {
+                "symbol": transaction["symbol"],
+                "quantity": transaction["quantity"],
+                "amount": response["amount"],
+                "user_email": transaction["user_email"],
+                "timestamp": transaction["timestamp"].isoformat() if transaction.get("timestamp") else None
+            }
+        }
     
     except Exception as e:
         print("Error en la transacción:", e)
