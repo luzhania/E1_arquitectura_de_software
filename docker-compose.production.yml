@@ -1,19 +1,16 @@
 services:
   api:
-    build: ./api
+    image: public.ecr.aws/e8f5b0r5/stocks-api:latest
     ports:
       - "8000:8000"
     depends_on:
       - mongo
     env_file:
       - .env
-    volumes:
-      - ./api:/app/api
     restart: unless-stopped
 
   updates_broker:
-    build:
-      context: ./broker_updates
+    image: public.ecr.aws/e8f5b0r5/broker-updates:latest
     container_name: updates_broker
     environment:
       - MONGO_URI=mongodb://mongo_db:27017/stocks_db
@@ -21,13 +18,10 @@ services:
       - mongo
     env_file:
       - .env
-    volumes:
-      - ./broker_updates:/app/broker_updates
     restart: unless-stopped
 
   requests_broker:
-    build:
-      context: ./broker_requests
+    image: public.ecr.aws/e8f5b0r5/broker-requests:latest
     container_name: requests_broker
     environment:
       - MONGO_URI=mongodb://mongo_db:27017/stocks_db
@@ -35,8 +29,6 @@ services:
       - mongo
     env_file:
       - .env
-    volumes:
-      - ./broker_requests:/app/broker_requests
     restart: unless-stopped
 
   mongo:
