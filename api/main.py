@@ -15,6 +15,7 @@ import utils.transbank as tx
 import utils.purchase_receip as purchase_receip
 import uuid
 import base64
+import httpx
 
 import os
 from dotenv import load_dotenv
@@ -277,6 +278,21 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
                 "total": response["amount"]
             }
         )
+        #comunicarse con Jobmaster
+        # Llamar al JobMaster para iniciar la estimación
+        try:
+            async with httpx.AsyncClient() as client:
+                job_data = {
+                    "user_id": user["sub"],
+                    "stock_symbol": transaction["symbol"],
+                    "quantity": transaction["quantity"]
+                }
+                #funciona en local, debe cambiarse en otro caos
+                response = await client.post("http://jobmaster:8000/job", json=job_data)
+                print("Estimación solicitada:", response.json())
+        except Exception as e:
+             print("Error al llamar a JobMaster:", e)
+
         # modificar transaccion con receipt_url
         transactions_collection.update_one(
             {"request_id": body.get("request_id")},
