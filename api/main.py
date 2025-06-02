@@ -287,7 +287,7 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
                     "stock_symbol": transaction["symbol"],
                     "quantity": transaction["quantity"]
                 }
-                #funciona en local, debe cambiarse en otro caos
+                #funciona en docker, debe cambiarse en otro caso
                 response = await client.post("http://jobmaster:8000/job", json=job_data)
                 print("Estimación solicitada:", response.json())
         except Exception as e:
