@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BROKER_HOST    = os.getenv("MQTT_BROKER")
-BROKER_PORT    = int(os.getenv("MQTT_PORT"))
+BROKER_PORT    = int(os.getenv("MQTT_PORT"), "9000")
 TOPIC_REQUESTS = "stocks/requests"
 TOPIC_VALIDATION = "stocks/validation"
 MQTT_USER      = os.getenv("MQTT_USER")
