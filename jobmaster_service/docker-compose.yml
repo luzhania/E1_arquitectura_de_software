@@ -16,9 +16,17 @@ services:
     depends_on:
       - redis
 
-  worker:
+  worker1:
     build: ./worker
-    container_name: celery-worker
+    container_name: celery-worker-1
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  worker2:
+    build: ./worker
+    container_name: celery-worker-2
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
     depends_on:
