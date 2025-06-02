@@ -37,6 +37,12 @@ jobs:
           python -m py_compile database.py
 
       - name: Test API startup
+        env:
+          MQTT_BROKER: "localhost"
+          MQTT_PORT: "1883"
+          MQTT_USER: "test"
+          MQTT_PASSWORD: "test"
+          MONGO_URI: "mongodb://localhost:27017/test"
         run: |
           python -c "from main import app; print('✅ API imports successfully')"
 
