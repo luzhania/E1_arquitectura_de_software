@@ -17,6 +17,7 @@ import uuid
 import base64
 import httpx
 
+
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -204,6 +205,8 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
     }
     result = transactions_collection.insert_one(transaction)
     transaction["_id"] = str(result.inserted_id)
+    price = stock["price"]
+    mqtt_manager.enviar_estimacion_jobmaster(user_id, symbol, quantity, price,transaction_id)
     return {"message": "Solicitud de compra exitosa.", "transaction": transaction}
 
 @app.post("/webpay/create")
@@ -285,7 +288,16 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
         # Generar estimación solo si el pago fue exitoso
         #FALTA PROBAR
         print("request_id:", body.get("request_id"))
-        mqtt_manager.enviar_estimacion_jobmaster(user["sub"], transaction["symbol"], transaction["quantity"], transaction["request_id"])
+        stock = collection.find_one({"symbol": transaction["symbol"]})
+        price = stock["price"] if stock else response["amount"] / transaction["quantity"]
+
+        mqtt_manager.enviar_estimacion_jobmaster(
+            user["sub"],
+            transaction["symbol"],
+            transaction["quantity"],
+            price,
+            transaction["request_id"]
+        )
         # revisar
 
         # modificar transaccion con receipt_url
@@ -319,6 +331,63 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
                 "message": "Error en la transacción."}
 
 #historial de transacciones
+@app.post("/stocks/{symbol}/buy")
+def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
+    user_id = user["sub"]
+    print(f"User email: {user_id}")
+
+    if quantity <= 0:
+        return {"error": "La cantidad debe ser mayor que cero."}
+
+    stock = collection.find_one({"symbol": symbol})
+    if not stock:
+        return {"error": f"Stock con símbolo {symbol} no encontrado."}
+
+    if stock["quantity"] < quantity:
+        return {"error": "No hay suficientes acciones disponibles."}
+
+    user_data = users_collection.find_one({"correo": user_id})
+    if not user_data:
+        return {"error": "Usuario no encontrado."}
+
+    total_price = stock["price"] * quantity
+    if user_data["saldo"] < total_price:
+        return {"error": "Saldo insuficiente."}
+
+    # Descontar saldo al usuario
+    users_collection.update_one(
+        {"correo": user_id},
+        {"$inc": {"saldo": -total_price}}
+    )
+
+    transaction_id = str(uuid.uuid4())
+
+   
+   # Publicar compra y enviar estimación
+    mqtt_manager.publish_buy_request(transaction_id, symbol, quantity)
+
+    # ✅ Agregar el price al enviar la estimación
+    price = stock["price"]
+    mqtt_manager.enviar_estimacion_jobmaster(user_id, symbol, quantity, price, transaction_id)
+
+
+    transaction = {
+        "request_id": transaction_id,
+        "transaction_id": transaction_id,
+        "symbol": symbol,
+        "quantity": quantity,
+        "user_email": user_id,
+        "timestamp": datetime.utcnow(),
+        "status": "PENDING",
+        "estimated_gain": None
+    }
+
+    result = transactions_collection.insert_one(transaction)
+    transaction["_id"] = str(result.inserted_id)
+
+    return {"message": "Compra con saldo registrada exitosamente.", "transaction": transaction}
+
+
 @app.get("/stocks/{symbol}/event_log")
 def get_event_log(symbol: str, page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
     skip = (page - 1) * count
@@ -330,6 +399,7 @@ def get_event_log(symbol: str, page: int = Query(1, ge=1), count: int = Query(25
         return {"symbol": symbol, "event_log": events, "page": page, "count": count}
     else:
         return {"error": f"No se encontraron eventos para el símbolo {symbol}."}
+
 
 @app.get("/events/all")  # Cambio de ruta para evitar conflictos
 def get_all_event_logs(
@@ -494,11 +564,13 @@ async def estado_workers():
     
 #actualizar estimación de stock
 
+
 @app.post("/internal/update_job")
 def update_job(data: dict):
     job_id = data.get("job_id")
     result = data.get("result")
-    request_id = data.get("request_id")
+    request_id = result.get("request_id")
+
     print("result:", result)
     print("estimated_gain:", result.get("estimated_gain"))
     print("request:_id:", request_id)
@@ -506,9 +578,10 @@ def update_job(data: dict):
     transaction = transactions_collection.find_one({"request_id": request_id})
 
     if not transaction:
-        print(f"⚠️ REquest con ID {request_id} no encontrada")
+        print(f"⚠️ Request con ID {request_id} no encontrada")
         return {"error": "REQUEST no encontrada"}
 
+    # Actualiza el campo estimated_gain en la transacción
     update_result = transactions_collection.update_one(
         {"request_id": request_id},
         {"$set": {"estimated_gain": result.get("estimated_gain")}}
@@ -516,4 +589,13 @@ def update_job(data: dict):
 
     print("Mongo update result:", update_result.modified_count)
 
+    # Inserta también en la colección 'estimations'
+    estimations_collection.insert_one({
+        "transaction_id": transaction.get("transaction_id"),
+        "estimated_gain": result.get("estimated_gain"),
+        "status": result.get("status"),
+        "completed_at": datetime.utcnow()
+    })
+
     return {"status": "updated"}
+

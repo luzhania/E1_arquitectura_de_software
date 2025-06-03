@@ -1,7 +1,0 @@
-requests
-fastapi 
-pydantic
-uuid
-celery 
-uvicorn
-redis
