@@ -96,9 +96,22 @@ jobs:
           ls -la appspec.yml || echo "❌ appspec.yml not found"  
           ls -la scripts/ || echo "❌ scripts/ directory not found"
 
-      - name: Create deployment package
+      - name: Create deployment package with environment variables
         run: |
-          zip -r deploy.zip docker-compose.production.yml appspec.yml scripts/
+          # Create .env file with GitHub variables
+          cat > .env << EOF
+          MONGO_URI=${{ vars.MONGO_URI }}
+          MQTT_BROKER=${{ vars.MQTT_BROKER }}
+          MQTT_PORT=${{ vars.MQTT_PORT }}
+          AUTH0_DOMAIN=${{ vars.AUTH0_DOMAIN }}
+          AUTH0_AUDIENCE=${{ vars.AUTH0_AUDIENCE }}
+          URL_FRONTEND=${{ vars.URL_FRONTEND }}
+          EOF
+          
+          # Create deployment package including .env file
+          zip -r deploy.zip docker-compose.production.yml appspec.yml scripts/ .env
+          
+          echo "✅ Deployment package created with environment variables"
 
       - name: Upload to S3
         run: |
