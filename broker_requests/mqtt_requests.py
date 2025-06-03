@@ -72,7 +72,7 @@ def on_message(client, userdata, msg):
         print("Error al decodificar el JSON:", e)
 
 def handle_validation(data):
-    if not collection_requests:
+    if collection_requests is None:
         print("[BROKER_REQUESTS] Database not available")
         return
         
@@ -112,7 +112,7 @@ def is_response(data):
     return data.get("kind") == "response"
 
 def handle_purchase_request(data):
-    if not collection_requests:
+    if collection_requests is None:
         print("[BROKER_REQUESTS] Database not available")
         return
         
@@ -130,7 +130,7 @@ def handle_purchase_request(data):
     print(f"Request registrada: {request_data}")
 
 def handle_response(data):
-    if not collection_requests:
+    if collection_requests is None:
         print("[BROKER_REQUESTS] Database not available")
         return
         
@@ -165,7 +165,7 @@ def handle_response(data):
         update_user_wallet(user_transaction, request_result["quantity"] * stock_result["price"], timestamp)
 
 def update_request_status(request_id, status, timestamp):
-    if not collection_requests:
+    if collection_requests is None:
         return
     collection_requests.update_one(
         {"request_id": request_id},
@@ -174,7 +174,7 @@ def update_request_status(request_id, status, timestamp):
     print(f"Request actualizada: {request_id} | Nuevo estado: {status}")
 
 def update_transaction_status(request_id, status, timestamp):
-    if not collection_transactions:
+    if collection_transactions is None:
         return
     transaction = collection_transactions.find_one({"request_id": request_id})
     if transaction:
@@ -185,7 +185,7 @@ def update_transaction_status(request_id, status, timestamp):
         print(f"Transacción actualizada: {request_id} | Nuevo estado: {status}")
 
 def handle_accepted_response(request, stock, timestamp):
-    if not collection_stocks:
+    if collection_stocks is None:
         return
     new_quantity = stock["quantity"] - request["quantity"]
     if new_quantity < 0:
@@ -205,7 +205,7 @@ def handle_accepted_response(request, stock, timestamp):
     log_event("BUY", request, stock["price"], timestamp)
 
 def handle_rejected_response(request, stock, timestamp):
-    if not collection_stocks:
+    if collection_stocks is None:
         return
     if request["applied"]:
         new_quantity = stock["quantity"] + request["quantity"]
@@ -221,7 +221,7 @@ def handle_rejected_response(request, stock, timestamp):
         )
 
 def update_user_wallet(transaction, balance_change, timestamp):
-    if not collection_users:
+    if collection_users is None:
         return
     if not transaction:
         print("Transacción no encontrada.")
@@ -241,7 +241,7 @@ def update_user_wallet(transaction, balance_change, timestamp):
     print(f"Saldo actualizado para el usuario {user_id} | Nuevo saldo: {new_balance}")
 
 def log_event(event_type, request, price, timestamp):
-    if not collection_event_log:
+    if collection_event_log is None:
         return
     event_data = {
         "type": event_type,
