@@ -2,23 +2,32 @@
 set +e  # Don't exit on errors
 
 echo "Stop Application"
-cd /home/ubuntu/
 
-# Check if docker-compose.yml exists
-if [ -f docker-compose.yml ]; then
-    echo "Stopping containers with docker-compose..."
-    docker-compose --file docker-compose.yml down --remove-orphans || echo "No containers to stop or docker-compose failed"
-else
-    echo "No docker-compose.yml found, stopping any running containers..."
-    # Stop all running containers (if any)
+# Simple approach: stop all containers without docker-compose
+echo "Stopping all running containers..."
+
+# Try with regular docker first
+if docker ps -q &> /dev/null; then
     RUNNING_CONTAINERS=$(docker ps -q)
     if [ ! -z "$RUNNING_CONTAINERS" ]; then
-        echo "Stopping running containers..."
-        docker stop $RUNNING_CONTAINERS || echo "Failed to stop some containers"
-        docker rm $RUNNING_CONTAINERS || echo "Failed to remove some containers"
+        echo "Found running containers, stopping them..."
+        docker stop $RUNNING_CONTAINERS || echo "Some containers failed to stop"
+        docker rm $RUNNING_CONTAINERS || echo "Some containers failed to remove"
     else
         echo "No running containers found"
     fi
+elif sudo docker ps -q &> /dev/null; then
+    echo "Using sudo for Docker commands..."
+    RUNNING_CONTAINERS=$(sudo docker ps -q)
+    if [ ! -z "$RUNNING_CONTAINERS" ]; then
+        echo "Found running containers, stopping them..."
+        sudo docker stop $RUNNING_CONTAINERS || echo "Some containers failed to stop"
+        sudo docker rm $RUNNING_CONTAINERS || echo "Some containers failed to remove"
+    else
+        echo "No running containers found"
+    fi
+else
+    echo "Docker not accessible - skipping container cleanup"
 fi
 
 echo "✅ Application stop completed"
