@@ -9,51 +9,74 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BROKER_HOST    = os.getenv("MQTT_BROKER")
-BROKER_PORT    = int(os.getenv("MQTT_PORT", "9000"))
+BROKER_PORT    = int(os.getenv("MQTT_PORT", "1883"))
 TOPIC_REQUESTS = "stocks/requests"
 TOPIC_VALIDATION = "stocks/validation"
 MQTT_USER      = os.getenv("MQTT_USER")
 MQTT_PASSWORD  = os.getenv("MQTT_PASSWORD")
 
+# Detect if running in CI environment
+IS_CI = os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
+
 class MQTTManager:
     def __init__(self, group_id: str):
         self.group_id = group_id
-        self.client = mqtt.Client()
-        if MQTT_USER:
-            self.client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
-        self.client.connect(BROKER_HOST, BROKER_PORT, keepalive=60)
-        self.client.loop_start()
+        self.client = None
+        self._connected = False
+        
+        # Skip MQTT connection in CI environment
+        if IS_CI:
+            print("[MQTT] Running in CI environment, skipping MQTT connection")
+            return
+            
+        # Only try to connect if we have a broker host
+        if BROKER_HOST:
+            self._connect()
+        else:
+            print("[MQTT] No broker configured, running in mock mode")
+
+    def _connect(self):
+        """Try to connect to MQTT broker"""
+        try:
+            self.client = mqtt.Client()
+            if MQTT_USER:
+                self.client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+            self.client.connect(BROKER_HOST, BROKER_PORT, keepalive=60)
+            self.client.loop_start()
+            self._connected = True
+            print(f"[MQTT] Connected to {BROKER_HOST}:{BROKER_PORT}")
+        except Exception as e:
+            print(f"[MQTT] Connection failed: {e}")
+            self._connected = False
 
     def publish_buy_request(self, transaction_id: str, symbol: str, quantity: int, deposit_token: str = "") -> str:
-        """
-        Publica una solicitud de compra en stocks/requests y
-        devuelve el request_id (UUIDv4).
-        """
+        if not self._connected:
+            print(f"[MQTT] Mock: Would publish BUY request {transaction_id}")
+            return
+            
         payload = {
             "request_id": transaction_id,
             "group_id": self.group_id,
-            # "timestamp": str(datetime.now(timezone.utc).isoformat()),
             "quantity": quantity,
             "symbol": symbol,
-            # "stock_origin": 0,
             "operation": "BUY",
-            # "deposit_token": deposit_token
         }
         self.client.publish(TOPIC_REQUESTS, json.dumps(payload), qos=1)
-        print(f"[MQTT] Publicada solicitud BUY: {payload}")
+        print(f"[MQTT] Published BUY request: {payload}")
     
     def publish_validation(self, request_id: str, status_transaction: str, deposit_token: str = "") -> None:
-        """
-        Publica una validación de compra en stocks/validation.
-        """
+        if not self._connected:
+            print(f"[MQTT] Mock: Would publish validation {request_id}")
+            return
+            
         payload = {
             "request_id": request_id,
             "timestamp": str(datetime.now(timezone.utc).isoformat()),
             "status": status_transaction,
-            "reason":"",
+            "reason": "",
             "deposit_token": deposit_token
         }
         self.client.publish(TOPIC_VALIDATION, json.dumps(payload), qos=0)
-        print(f"[MQTT] Publicada validación: {payload}")
+        print(f"[MQTT] Published validation: {payload}")
 
 mqtt_manager = MQTTManager(group_id="27")
