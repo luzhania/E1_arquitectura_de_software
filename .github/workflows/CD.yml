@@ -8,7 +8,6 @@ on:
     branches:
       - main
 
-
 permissions:
   id-token: write
   contents: read
@@ -29,7 +28,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2  # Changed to us-east-2
+          aws-region: us-east-1  # Changed to us-east-1 for ECR Public
 
       - name: Login to Amazon ECR Public
         id: login-ecr-public
@@ -85,12 +84,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Configure AWS Credentials
+      - name: Configure AWS Credentials for EC2 deployment
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2  # Changed to us-east-2
+          aws-region: us-east-2  # Keep us-east-2 for EC2/CodeDeploy
 
       - name: Create deployment package
         run: |
