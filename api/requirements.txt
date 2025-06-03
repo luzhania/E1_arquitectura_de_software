@@ -12,3 +12,4 @@ fastapi-auth0
 requests
 transbank-sdk
 python-multipart
+httpx
