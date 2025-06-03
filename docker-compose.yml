@@ -52,8 +52,5 @@ volumes:
 
   mongo_data:
 
-networks:
-  default:
-    external:
-      name: jobmaster-network
+
 
