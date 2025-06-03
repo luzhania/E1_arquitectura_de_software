@@ -6,21 +6,31 @@ files:
   - source: ./docker-compose.production.yml
     # Carpeta donde lo vamos a dejar
     destination: /home/ubuntu/docker-compose.yml  # Rename to docker-compose.yml on deployment
+  - source: ./.env
+    destination: /home/ubuntu/.env
   - source: scripts
     destination: /home/ubuntu/scripts
 
 # Ciclo de vida del deployment 
 # https://docs.aws.amazon.com/codedeploy/latest/userguide/reference-appspec-file-structure-hooks.html
 hooks:
-  ApplicationStop:  # Fixed typo from "ApllicationStop"
-    - location: scripts/application-stop.sh  # Removed ./
-      timeout: 10000
+  BeforeInstall:
+    - location: scripts/before-install.sh
+      timeout: 300
+      runas: root
+  ApplicationStop:
+    - location: scripts/application-stop.sh
+      timeout: 60
+      runas: ubuntu
   AfterInstall:
-    - location: scripts/after-install.sh     # Removed ./
-      timeout: 3000
+    - location: scripts/after-install.sh
+      timeout: 300
+      runas: ubuntu
   ApplicationStart:
-    - location: scripts/application-start.sh # Removed ./
-      timeout: 3000
+    - location: scripts/application-start.sh
+      timeout: 300
+      runas: ubuntu
   ValidateService:
-    - location: scripts/validate-service.sh  # Removed ./
-      timeout: 3000
+    - location: scripts/validate-service.sh
+      timeout: 60
+      runas: ubuntu
