@@ -554,7 +554,7 @@ def get_transaction(request_id: str, user=Depends(verify_token)):
 async def estado_workers():
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get("http://18.118.49.30:8010/heartbeat")
+            resp = await client.get("https://3.130.207.58/heartbeat")
             if resp.status_code == 200:
                 return resp.json()
             else:
