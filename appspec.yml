@@ -21,7 +21,7 @@ hooks:
   ApplicationStop:
     - location: scripts/application-stop.sh
       timeout: 120
-      runas: ubuntu
+      runas: root  # Changed from ubuntu to root# Changed from ubuntu to root
   AfterInstall:
     - location: scripts/after-install.sh
       timeout: 300
