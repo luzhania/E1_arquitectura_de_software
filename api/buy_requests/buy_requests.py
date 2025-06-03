@@ -88,7 +88,7 @@ class MQTTManager:
 
     def enviar_estimacion_jobmaster(self,user_id, stock_symbol, quantity, price, request_id):
         try:
-            res = requests.post("https://3.130.207.58/job", json={
+            res = requests.post("https://iic2175danielaarp.me/job", json={
                 "user_id": user_id,
                 "stock_symbol": stock_symbol,
                 "quantity": quantity,
