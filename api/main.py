@@ -2,7 +2,7 @@ from fastapi import FastAPI, Query, Depends
 from typing import Optional
 from datetime import datetime
 from database import get_db
-from buy_requests.buy_requests import mqtt_manager 
+from buy_requests.buy_requests import mqtt_manager
 from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel
 from datetime import datetime
@@ -15,6 +15,7 @@ import utils.transbank as tx
 import utils.purchase_receip as purchase_receip
 import uuid
 import base64
+import httpx
 
 import os
 from dotenv import load_dotenv
@@ -38,6 +39,8 @@ transactions_collection = db["transactions"]
 users_db = get_db()
 users_collection = users_db["users"]
 collection_event_log = db["event_log"]
+#ESTO ES NUEVO
+estimations_collection = db["estimations"]
 
 # Inicializar el cliente de Transbank
 # tx_client = tx.get_tx()
@@ -238,6 +241,7 @@ def iniciar_webpay(data: dict, user=Depends(verify_token)):
         "user_email": user_id,
         "timestamp": datetime.utcnow(),
         "status": "PENDING",
+        "estimated_gain": None,  # Inicializar como None
     }
 
     transactions_collection.insert_one(transaction)
@@ -277,6 +281,13 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
                 "total": response["amount"]
             }
         )
+        #ESTO ES NUEVO
+        # Generar estimación solo si el pago fue exitoso
+        #FALTA PROBAR
+        print("request_id:", body.get("request_id"))
+        mqtt_manager.enviar_estimacion_jobmaster(user["sub"], transaction["symbol"], transaction["quantity"], transaction["request_id"])
+        # revisar
+
         # modificar transaccion con receipt_url
         transactions_collection.update_one(
             {"request_id": body.get("request_id")},
@@ -405,7 +416,6 @@ def get_wallet(user: Dict = Depends(verify_token)):
 @app.get("/transactions")
 def get_transactions(user: Dict = Depends(verify_token), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
     user_id = user["sub"]
-    print(f"User email: {user_id}")
     skip = (page - 1) * count
     transactions = list(
         transactions_collection.find({"user_email": user_id}, {"_id": 0})
@@ -413,11 +423,27 @@ def get_transactions(user: Dict = Depends(verify_token), page: int = Query(1, ge
         .limit(count)
     )
     
+    # Para cada transacción, agregar la estimación si existe y formatear fechas
+    for tx in transactions:
+        estimation = estimations_collection.find_one({"transaction_id": tx.get("transaction_id")}, {"_id": 0})
+        
+        if estimation:
+            # Formatear fecha completed_at si existe
+            if estimation.get("completed_at"):
+                estimation["completed_at"] = estimation["completed_at"].isoformat()
+            tx["estimation"] = estimation
+        else:
+            tx["estimation"] = None
+        
+        if tx.get("timestamp"):
+            tx["timestamp"] = tx["timestamp"].isoformat()
+
     if transactions:
         total_count = transactions_collection.count_documents({"user_email": user_id})
         return {"stocks": transactions, "page": page, "count": total_count}
     else:
         return {"error": f"No se encontraron transacciones para el usuario {user_id}."}
+    
 
 
 @app.get("/transactions/ok")
@@ -434,3 +460,60 @@ def get_transactions_ok(user: Dict = Depends(verify_token), page: int = Query(1,
         return {"transactions": transactions, "page": page, "count": count}
     else:
         return {"error": f"No se encontraron transacciones OK para el usuario {user_id}."}
+    
+
+# TODO ESTO ES NUEVO
+@app.get("/transactions/{request_id}") #FALTA PROBAR
+def get_transaction(request_id: str, user=Depends(verify_token)):
+    user_email = user["sub"]
+    transaction = transactions_collection.find_one({"request_id": request_id, "user_email": user_email})
+    if not transaction:
+        return {"error": "Transacción no encontrada"}
+
+    estimation = estimations_collection.find_one({"transaction_id": transaction.get("transaction_id")})
+ 
+    if transaction.get("timestamp"):
+        transaction["timestamp"] = transaction["timestamp"].isoformat()
+
+    return {
+        "transaction": transaction,
+        "estimation": estimation
+    }
+ 
+@app.get("/heartbeat") #FUNCIONA
+async def estado_workers():
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get("http://18.118.49.30:8010/heartbeat")
+            if resp.status_code == 200:
+                return resp.json()
+            else:
+                return {"status": "remote error", "code": resp.status_code}
+    except Exception as e:
+        return {"status": "offline", "error": str(e)}
+    
+#actualizar estimación de stock
+
+@app.post("/internal/update_job")
+def update_job(data: dict):
+    job_id = data.get("job_id")
+    result = data.get("result")
+    request_id = data.get("request_id")
+    print("result:", result)
+    print("estimated_gain:", result.get("estimated_gain"))
+    print("request:_id:", request_id)
+
+    transaction = transactions_collection.find_one({"request_id": request_id})
+
+    if not transaction:
+        print(f"⚠️ REquest con ID {request_id} no encontrada")
+        return {"error": "REQUEST no encontrada"}
+
+    update_result = transactions_collection.update_one(
+        {"request_id": request_id},
+        {"$set": {"estimated_gain": result.get("estimated_gain")}}
+    )
+
+    print("Mongo update result:", update_result.modified_count)
+
+    return {"status": "updated"}
