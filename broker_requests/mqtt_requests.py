@@ -5,11 +5,11 @@ from dateutil import parser
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import time
+
 load_dotenv()
 
-
 BROKER_HOST = os.getenv("MQTT_BROKER")
-BROKER_PORT = int(os.getenv("MQTT_PORT"))
+BROKER_PORT = int(os.getenv("MQTT_PORT", "9000"))
 REQUEST_TOPIC = "stocks/requests"
 VALIDATION_TOPIC = "stocks/validation"
 MQTT_USER = os.getenv("MQTT_USER")
@@ -17,23 +17,46 @@ MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
 MONGO_URI = os.getenv("MONGO_URI")
 
-client_mongo = MongoClient(MONGO_URI)
-db = client_mongo["stocks_db"] 
-collection_requests = db["requests"]
-collection_stocks = db["current_stocks"]
-collection_transactions = db["transactions"]
-collection_users = db["users"]
-collection_event_log = db["event_log"]
+# Detect if running in CI environment
+IS_CI = os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
+
+# Only connect to MongoDB if not in CI
+if IS_CI:
+    print("[BROKER_REQUESTS] Running in CI environment, skipping database connection")
+    client_mongo = None
+    db = None
+    collection_requests = None
+    collection_stocks = None
+    collection_transactions = None
+    collection_users = None
+    collection_event_log = None
+else:
+    try:
+        client_mongo = MongoClient(MONGO_URI)
+        db = client_mongo["stocks_db"] 
+        collection_requests = db["requests"]
+        collection_stocks = db["current_stocks"]
+        collection_transactions = db["transactions"]
+        collection_users = db["users"]
+        collection_event_log = db["event_log"]
+        print("[BROKER_REQUESTS] Connected to MongoDB")
+    except Exception as e:
+        print(f"[BROKER_REQUESTS] Failed to connect to MongoDB: {e}")
+        client_mongo = None
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
     client.subscribe(REQUEST_TOPIC)
     client.subscribe(VALIDATION_TOPIC)
 
-
 def on_message(client, userdata, msg):
     print(f"Mensaje recibido en {msg.topic}: {msg.payload.decode()}")
     
+    # Skip processing in CI environment
+    if IS_CI:
+        print("[BROKER_REQUESTS] Running in CI, skipping message processing")
+        return
+        
     try:
         data = json.loads(msg.payload.decode("utf-8"))
         handle_timestamp(data)
@@ -49,6 +72,10 @@ def on_message(client, userdata, msg):
         print("Error al decodificar el JSON:", e)
 
 def handle_validation(data):
+    if not collection_requests:
+        print("[BROKER_REQUESTS] Database not available")
+        return
+        
     request_id = data.get("request_id")
     status = data.get("status")
     timestamp = data["timestamp"]
@@ -71,8 +98,6 @@ def handle_validation(data):
         print(f"Stock {request_result['symbol']} no encontrado.")
         return
 
-    #En caso de ser aceptada la reserva se realiza por la aceptación desde el canal requests
-        
     if status == "REJECTED":
         handle_rejected_response(request_result, stock_result, timestamp)
 
@@ -80,16 +105,17 @@ def handle_timestamp(data):
     if data.get("timestamp"):
         data["timestamp"] = parser.isoparse(data["timestamp"])
 
-
 def is_purchase_request(data):
     return "symbol" in data and data.get("kind") != "response"
-
 
 def is_response(data):
     return data.get("kind") == "response"
 
-
 def handle_purchase_request(data):
+    if not collection_requests:
+        print("[BROKER_REQUESTS] Database not available")
+        return
+        
     request_data = {
         "request_id": data.get("request_id"),
         "group_id": data.get("group_id"),
@@ -103,8 +129,11 @@ def handle_purchase_request(data):
     collection_requests.insert_one(request_data)
     print(f"Request registrada: {request_data}")
 
-
 def handle_response(data):
+    if not collection_requests:
+        print("[BROKER_REQUESTS] Database not available")
+        return
+        
     request_id = data.get("request_id")
     status = data.get("status")
     timestamp = data["timestamp"]
@@ -131,21 +160,22 @@ def handle_response(data):
     if status == "ACCEPTED":
         handle_accepted_response(request_result, stock_result, timestamp)
         update_user_wallet(user_transaction, -request_result["quantity"] * stock_result["price"], timestamp)
-        
     elif status == "REJECTED":
         handle_rejected_response(request_result, stock_result, timestamp)
         update_user_wallet(user_transaction, request_result["quantity"] * stock_result["price"], timestamp)
 
-
 def update_request_status(request_id, status, timestamp):
+    if not collection_requests:
+        return
     collection_requests.update_one(
         {"request_id": request_id},
         {"$set": {"status": status, "timestamp": timestamp}}
     )
     print(f"Request actualizada: {request_id} | Nuevo estado: {status}")
 
-
 def update_transaction_status(request_id, status, timestamp):
+    if not collection_transactions:
+        return
     transaction = collection_transactions.find_one({"request_id": request_id})
     if transaction:
         collection_transactions.update_one(
@@ -154,8 +184,9 @@ def update_transaction_status(request_id, status, timestamp):
         )
         print(f"Transacción actualizada: {request_id} | Nuevo estado: {status}")
 
-
 def handle_accepted_response(request, stock, timestamp):
+    if not collection_stocks:
+        return
     new_quantity = stock["quantity"] - request["quantity"]
     if new_quantity < 0:
         print(f"No hay suficiente cantidad de {request['symbol']} para completar la solicitud.")
@@ -173,8 +204,9 @@ def handle_accepted_response(request, stock, timestamp):
 
     log_event("BUY", request, stock["price"], timestamp)
 
-
 def handle_rejected_response(request, stock, timestamp):
+    if not collection_stocks:
+        return
     if request["applied"]:
         new_quantity = stock["quantity"] + request["quantity"]
         collection_stocks.update_one(
@@ -188,8 +220,9 @@ def handle_rejected_response(request, stock, timestamp):
             {"$set": {"applied": True}}
         )
 
-
 def update_user_wallet(transaction, balance_change, timestamp):
+    if not collection_users:
+        return
     if not transaction:
         print("Transacción no encontrada.")
         return
@@ -207,8 +240,9 @@ def update_user_wallet(transaction, balance_change, timestamp):
     )
     print(f"Saldo actualizado para el usuario {user_id} | Nuevo saldo: {new_balance}")
 
-
 def log_event(event_type, request, price, timestamp):
+    if not collection_event_log:
+        return
     event_data = {
         "type": event_type,
         "symbol": request["symbol"],
@@ -221,9 +255,19 @@ def log_event(event_type, request, price, timestamp):
     print(f"Compra exitosa registrada en el event_log: {event_data}")
 
 def start_mqtt_client():
+    # Skip MQTT connection in CI environment
+    if IS_CI:
+        print("[BROKER_REQUESTS] Running in CI environment, skipping MQTT client")
+        return
+        
+    if not BROKER_HOST:
+        print("[BROKER_REQUESTS] No MQTT broker configured")
+        return
+        
     client = mqtt.Client()
 
-    client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+    if MQTT_USER:
+        client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
 
     client.on_connect = on_connect
     client.on_message = on_message
@@ -232,7 +276,6 @@ def start_mqtt_client():
         try:
             client.connect(BROKER_HOST, BROKER_PORT, keepalive=60)
             client.loop_forever()
-            # break
         except ConnectionRefusedError:
             print("Conexión rechazada. Reintentando en 5 segundos...")
             time.sleep(5)
