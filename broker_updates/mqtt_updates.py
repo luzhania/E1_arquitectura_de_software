@@ -5,21 +5,37 @@ from dateutil import parser
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import time
+
 load_dotenv()
 
-
 BROKER_HOST = os.getenv("MQTT_BROKER")
-BROKER_PORT = int(os.getenv("MQTT_PORT"))
+BROKER_PORT = int(os.getenv("MQTT_PORT", "1883"))  # Add default value
 TOPIC = "stocks/updates"
 MQTT_USER = os.getenv("MQTT_USER")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
 MONGO_URI = os.getenv("MONGO_URI")
 
-client_mongo = MongoClient(MONGO_URI)
-db = client_mongo["stocks_db"] 
-collection_stocks = db["current_stocks"]
-collection_event_log = db["event_log"]
+# Detect if running in CI environment
+IS_CI = os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
+
+# Only connect to MongoDB if not in CI
+if IS_CI:
+    print("[BROKER_UPDATES] Running in CI environment, skipping database connection")
+    client_mongo = None
+    db = None
+    collection_stocks = None
+    collection_event_log = None
+else:
+    try:
+        client_mongo = MongoClient(MONGO_URI)
+        db = client_mongo["stocks_db"] 
+        collection_stocks = db["current_stocks"]
+        collection_event_log = db["event_log"]
+        print("[BROKER_UPDATES] Connected to MongoDB")
+    except Exception as e:
+        print(f"[BROKER_UPDATES] Failed to connect to MongoDB: {e}")
+        client_mongo = None
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
@@ -27,6 +43,16 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     print(f"Mensaje recibido en {msg.topic}: {msg.payload.decode()}")
+    
+    # Skip processing in CI environment
+    if IS_CI:
+        print("[BROKER_UPDATES] Running in CI, skipping message processing")
+        return
+        
+    if not collection_stocks:
+        print("[BROKER_UPDATES] Database not available")
+        return
+        
     try:
         data = json.loads(msg.payload.decode("utf-8"))
         if data.get("timestamp"):
@@ -57,8 +83,9 @@ def on_message(client, userdata, msg):
                 "longName": data.get("longName", ""),
                 "timestamp": data["timestamp"]
             }
-            collection_event_log.insert_one(event_data)
-            print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
+            if collection_event_log:
+                collection_event_log.insert_one(event_data)
+                print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
 
         elif kind == "EMIT":
             emit_quantity = data.get("quantity", 0)
@@ -88,8 +115,9 @@ def on_message(client, userdata, msg):
                 "longName": data.get("longName", ""),
                 "timestamp": data["timestamp"]
                 }
-                collection_event_log.insert_one(event_data)
-                print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
+                if collection_event_log:
+                    collection_event_log.insert_one(event_data)
+                    print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
 
             else:
                 new_stock = {
@@ -120,8 +148,9 @@ def on_message(client, userdata, msg):
                     "longName": "",
                     "timestamp": data["timestamp"]
                 }
-                collection_event_log.insert_one(event_data)
-                print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
+                if collection_event_log:
+                    collection_event_log.insert_one(event_data)
+                    print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
             else:
                 new_stock = {
                     "symbol": symbol,
@@ -133,14 +162,23 @@ def on_message(client, userdata, msg):
                 collection_stocks.insert_one(new_stock)
                 print(f"[UPDATE] Acción no encontrada. Se insertó con valores por defecto: {new_stock}")
 
-
     except json.JSONDecodeError as e:
         print("Error al decodificar el JSON:", e)
 
 def start_mqtt_client():
+    # Skip MQTT connection in CI environment
+    if IS_CI:
+        print("[BROKER_UPDATES] Running in CI environment, skipping MQTT client")
+        return
+        
+    if not BROKER_HOST:
+        print("[BROKER_UPDATES] No MQTT broker configured")
+        return
+        
     client = mqtt.Client()
 
-    client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+    if MQTT_USER:
+        client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
 
     client.on_connect = on_connect
     client.on_message = on_message
@@ -149,7 +187,6 @@ def start_mqtt_client():
         try:
             client.connect(BROKER_HOST, BROKER_PORT, keepalive=60)
             client.loop_forever()
-            # break
         except ConnectionRefusedError:
             print("Conexión rechazada. Reintentando en 5 segundos...")
             time.sleep(5)
