@@ -73,9 +73,6 @@ jobs:
   deploy-to-ec2:
     runs-on: ubuntu-latest
     needs: [deploy-backend]
-    defaults:
-      run:
-        working-directory: ./E1_arquitectura_de_software
     
     steps:
       - name: Checkout code
