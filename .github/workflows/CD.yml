@@ -85,6 +85,17 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2  # Keep us-east-2 for EC2/CodeDeploy
 
+      - name: Debug - List files before packaging
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Files in current directory:"
+          ls -la
+          echo "Checking for deployment files:"
+          ls -la docker-compose.production.yml || echo "❌ docker-compose.production.yml not found"
+          ls -la appspec.yml || echo "❌ appspec.yml not found"  
+          ls -la scripts/ || echo "❌ scripts/ directory not found"
+
       - name: Create deployment package
         run: |
           zip -r deploy.zip docker-compose.production.yml appspec.yml scripts/

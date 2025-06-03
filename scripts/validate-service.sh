@@ -12,6 +12,6 @@ if curl -f http://localhost:8000/ > /dev/null 2>&1; then
 else
     echo "API service failed to start"
     # Show logs for debugging
-    docker compose --file /home/ubuntu/docker-compose.yml logs api
+    docker-compose --file /home/ubuntu/docker-compose.yml logs api
     exit 1
 fi

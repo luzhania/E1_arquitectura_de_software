@@ -2,4 +2,4 @@
 
 echo "Application starting"
 cd /home/ubuntu/
-docker compose --file docker-compose.yml up -d
+docker-compose --file docker-compose.yml up -d
