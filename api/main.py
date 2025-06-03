@@ -16,6 +16,8 @@ import utils.purchase_receip as purchase_receip
 import uuid
 import base64
 import httpx
+from fastapi import Body
+
 
 
 import os
@@ -566,7 +568,7 @@ async def estado_workers():
 
 
 @app.post("/internal/update_job")
-def update_job(data: dict):
+def update_job(data: dict = Body(...)):
     job_id = data.get("job_id")
     result = data.get("result")
     request_id = result.get("request_id")
