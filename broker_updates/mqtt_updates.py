@@ -49,7 +49,7 @@ def on_message(client, userdata, msg):
         print("[BROKER_UPDATES] Running in CI, skipping message processing")
         return
         
-    if not collection_stocks:
+    if collection_stocks is None:
         print("[BROKER_UPDATES] Database not available")
         return
         
@@ -83,7 +83,7 @@ def on_message(client, userdata, msg):
                 "longName": data.get("longName", ""),
                 "timestamp": data["timestamp"]
             }
-            if collection_event_log:
+            if collection_event_log is not None:
                 collection_event_log.insert_one(event_data)
                 print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
 
@@ -115,7 +115,7 @@ def on_message(client, userdata, msg):
                 "longName": data.get("longName", ""),
                 "timestamp": data["timestamp"]
                 }
-                if collection_event_log:
+                if collection_event_log is not None:
                     collection_event_log.insert_one(event_data)
                     print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
 
@@ -148,7 +148,7 @@ def on_message(client, userdata, msg):
                     "longName": "",
                     "timestamp": data["timestamp"]
                 }
-                if collection_event_log:
+                if collection_event_log is not None:
                     collection_event_log.insert_one(event_data)
                     print(f"[EVENT LOG] Registrada {data['kind']} de {data['symbol']}")
             else:
