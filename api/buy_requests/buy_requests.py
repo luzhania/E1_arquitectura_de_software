@@ -65,7 +65,9 @@ class MQTTManager:
         self.client.publish(TOPIC_REQUESTS, json.dumps(payload), qos=1)
 
         print(f"[MQTT] Publicada solicitud BUY: {payload}")
-        enviar_estimacion_jobmaster(self.group_id, symbol, quantity)
+
+        #aun no se envia al JobMaster, se hace en el momento de la validación de la compra
+        #enviar_estimacion_jobmaster(self.group_id, symbol, quantity) 
     
     def publish_validation(self, request_id: str, status_transaction: str, deposit_token: str = "") -> None:
         if not self._connected:
@@ -83,18 +85,21 @@ class MQTTManager:
         print(f"[MQTT] Published validation: {payload}")
 
 
-def enviar_estimacion_jobmaster(user_id, stock_symbol, quantity):
-    try:
-        res = requests.post("http://18.118.49.30:8000/job", json={
-            "user_id": user_id,
-            "stock_symbol": stock_symbol,
-            "quantity": quantity
-        })
-        data = res.json()
-        print("[JobMaster] Estimación enviada, job_id:", data["job_id"])
-        return data["job_id"]
-    except Exception as e:
-        print("[JobMaster] Error al enviar estimación:", e)
-        return None
+
+    def enviar_estimacion_jobmaster(self,user_id, stock_symbol, quantity, request_id):
+        try:
+            res = requests.post("http://jobmaster-api:8000/job", json={
+                "user_id": user_id,
+                "stock_symbol": stock_symbol,
+                "quantity": quantity,
+                "request_id": request_id
+            })
+            data = res.json()
+            print("[JobMaster] Estimación enviada, job_id:", data["job_id"])
+            return data["job_id"]
+        except Exception as e:
+            print("[JobMaster] Error al enviar estimación:", e)
+            return None
+
 
 mqtt_manager = MQTTManager(group_id="27")
