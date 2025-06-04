@@ -78,7 +78,7 @@ def handle_validation(data):
         
     request_id = data.get("request_id")
     status = data.get("status")
-    timestamp = data["timestamp"]
+    timestamp = data.get("timestamp")
 
     if not request_id:
         print("Ignorando response sin request_id:", data)
