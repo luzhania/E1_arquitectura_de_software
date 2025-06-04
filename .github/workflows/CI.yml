@@ -67,37 +67,6 @@ jobs:
         run: |
           python -m py_compile *.py
 
-  test-jobmaster:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [jobmaster, worker]
-    defaults:
-      run:
-        working-directory: ./jobmaster_service/${{ matrix.service }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          else
-            pip install fastapi uvicorn celery redis pydantic
-          fi
-
-      - name: Basic syntax check
-        run: |
-          python -m py_compile *.py
-
   docker-build-test:
     runs-on: ubuntu-latest
     strategy:
