@@ -6,7 +6,7 @@ from buy_requests.buy_requests import mqtt_manager
 from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel
 from datetime import datetime
-from auth import verify_token, admin_required
+from auth import verify_token, admin_required, is_admin
 from typing import Dict
 from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
@@ -150,28 +150,55 @@ def get_stocks(
     price: Optional[str] = None,
     longName: Optional[str] = None,
     timestamp: Optional[str] = None,
-    quantity: Optional[str] = None,  # Modificado para aceptar un rango en formato "min-max"
+    quantity: Optional[str] = None,
     page: int = Query(1, ge=1), 
     count: int = Query(25, ge=1)
 ):
+    if admin_transactions_collection is None or collection is None:
+        return {"error": "No hay stocks disponibles."}
+    
+    print(admin_transactions_collection)
+    # Obtener todos los símbolos disponibles en admin_transactions_collection
+    available_admin_stocks = list(admin_transactions_collection.find({}, {"_id": 0, "symbol": 1, "quantity": 1}))
+    available_symbols = {item["symbol"]: item["quantity"] for item in available_admin_stocks}
+    
+    if not available_symbols:
+        return {"error": "No hay acciones disponibles para compra."}
+
+    # Construir la consulta para obtener los detalles desde la colección principal
+    query = {"symbol": {"$in": list(available_symbols.keys())}}
+
+    if symbol:
+        query["symbol"] = symbol
+    if longName:
+        query["longName"] = {"$regex": longName, "$options": "i"}
+    if price:
+        try:
+            min_price, max_price = map(float, price.split("-"))
+            query["price"] = {"$gte": min_price, "$lte": max_price}
+        except ValueError:
+            return {"error": "Formato de precio inválido. Usa 'min-max'."}
+    if timestamp:
+        query["timestamp"] = timestamp
+
     skip = (page - 1) * count
-    # Obtener las stocks de collection que están en admin_transactions_collection
-    if admin_transactions_collection is None:
-        return {"error": "No hay stocks disponibles."}
-    # Construir la consulta para admin_transactions_collection
-    # Usar la función build_stocks_query para construir la consulta
-    query = build_stocks_query(symbol, price, longName, timestamp, quantity)
-    print(f"MongoDB query: {query}")
-    if collection is not None:
-        stocks = list(collection.find(query, {"_id": 0}).skip(skip).limit(count))
-        total_count = collection.count_documents(query)
-        # Filtrar las stocks que están en admin_transactions_collection
-        stocks = [stock for stock in stocks if stock["symbol"] in admin_transactions_collection.distinct("symbol")]
-        if not stocks:
-            return {"error": "No se encontraron acciones que coincidan con los criterios de búsqueda."}
-        return {"stocks": stocks, "page": page, "count": total_count}
-    else:
-        return {"error": "No hay stocks disponibles."}
+
+    # Buscar en la colección principal
+    matching_stocks = list(collection.find(query, {"_id": 0}).skip(skip).limit(count))
+    total_count = collection.count_documents(query)
+
+    # Enriquecer con cantidad disponible desde admin_transactions_collection
+    for stock in matching_stocks:
+        stock["quantity"] = available_symbols.get(stock["symbol"], 0)
+
+    if not matching_stocks:
+        return {"error": "No se encontraron acciones que coincidan con los criterios de búsqueda."}
+
+    return {
+        "stocks": matching_stocks,
+        "page": page,
+        "count": total_count
+    }
 
 @app.get("/stocks/{symbol}")
 def get_stock_detail(symbol: str, price: Optional[float] = None, quantity: Optional[int] = None, date: Optional[str] = None, longName: Optional[str] = None,shortName: Optional[str] = None, page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
@@ -260,10 +287,18 @@ def iniciar_webpay_user(data: dict, user=Depends(verify_token)):
     frontend_payment_url = f"{URL_FRONTEND}/payment" if URL_FRONTEND else "https://www.arquitecturadesoftware.me/payment"
     trx_resp = tx.get_tx().create(transaction_id, "stocks_buy", amount, frontend_payment_url)
     
-    if data.get("owner_type", False) == "platform":
-        # Si es una compra a las stocks de la plataforma, envía solicitud de compra al broker
-        mqtt_manager.publish_buy_request(request_id, data["symbol"], data["quantity"], trx_resp["token"])
-        mqtt_manager.publish_validation(request_id, "ACCEPTED", trx_resp["token"])
+    #Ya no envia la solicitud al broker
+    # if data.get("owner_type", False) == "platform":
+    #     # Si es una compra a las stocks de la plataforma, envía solicitud de compra al broker
+    #     mqtt_manager.publish_buy_request(request_id, data["symbol"], data["quantity"], trx_resp["token"])
+    #     mqtt_manager.publish_validation(request_id, "ACCEPTED", trx_resp["token"])
+
+    #Actualizar la colección de las transacciones del administrador
+    admin_transactions_collection.update_one(
+        {"symbol": data["symbol"]},
+        {"$inc": {"quantity": -data["quantity"]}, "$set": {"timestamp": datetime.utcnow()}},
+        upsert=True
+    )
     
     transaction = {
         "request_id": request_id,
@@ -282,7 +317,7 @@ def iniciar_webpay_user(data: dict, user=Depends(verify_token)):
     return {"url": trx_resp["url"], "token_ws": trx_resp["token"], "request_id": request_id}
 
 #Administrador compra de inventario
-@app.post("admin/webpay/create")
+@app.post("/admin/webpay/create")
 def iniciar_webpay_admin(data: dict, user=Depends(admin_required)):
     user_id = user["sub"]
     user = users_collection.find_one({"correo": user_id})
@@ -339,7 +374,20 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
 
     # TRANSACCIÓN ANULADA POR EL USUARIO
     if not token_ws or token_ws == "":
-        mqtt_manager.publish_validation(body.get("request_id"), "REJECTED", transaction["token_ws"])
+        if is_admin(user):
+            mqtt_manager.publish_validation(body.get("request_id"), "REJECTED", transaction["token_ws"])
+        else:
+            #Retornar cantidad de acciones al inventario del administrador
+            admin_transactions_collection.update_one(
+                {"symbol": transaction["symbol"]},
+                {"$inc": {"quantity": transaction["quantity"]}, "$set": {"timestamp": datetime.utcnow()}},
+                upsert=True
+            )
+            #Actualizar status de la transaccctions collection
+            transactions_collection.update_one(
+                {"request_id": body.get("request_id")},
+                {"$set": {"status": "CANCEL", "timestamp": datetime.utcnow()}}
+            )
         return {"status": "CANCEL",
                 "message": "Transacción anulada por el usuario."}
 
@@ -347,10 +395,23 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
         response = tx.get_tx().commit(token_ws)
 
         response_status = "OK" if response["response_code"] == 0 else "REJECTED"
-        mqtt_manager.publish_validation(body.get("request_id"), response_status, transaction["token_ws"])
+        if is_admin(user):
+            mqtt_manager.publish_validation(body.get("request_id"), response_status, transaction["token_ws"])
 
         # TRANSACCIÓN RECHAZADA
         if response["response_code"] != 0:
+            if not is_admin(user):
+                # Retornar cantidad de acciones al inventario del administrador
+                admin_transactions_collection.update_one(
+                    {"symbol": transaction["symbol"]},
+                    {"$inc": {"quantity": transaction["quantity"]}, "$set": {"timestamp": datetime.utcnow()}},
+                    upsert=True
+                )
+                # Actualizar status de la transacción en transactions_collection
+                transactions_collection.update_one(
+                    {"request_id": body.get("request_id")},
+                    {"$set": {"status": "REJECTED", "timestamp": datetime.utcnow()}}
+                )
             return {"status":"REJECTED",
                     "message": "Transacción ha sido rechazada.",
                     }
@@ -366,6 +427,13 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
             }
         )
         #ESTO ES NUEVO
+        # Si es un usuario normal actualiza su estado aca
+        if not is_admin(user):
+            # Actualizar el status de la transacción en transactions_collection
+            transactions_collection.update_one(
+                {"request_id": body.get("request_id")},
+                {"$set": {"status": "OK", "timestamp": datetime.utcnow()}}
+            )
         # Generar estimación solo si el pago fue exitoso
         #FALTA PROBAR
         print("request_id:", body.get("request_id"))

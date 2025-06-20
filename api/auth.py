@@ -106,3 +106,7 @@ def admin_required(user: dict = Depends(verify_token)):
         raise HTTPException(status_code=403, detail="Not authorized to access this resource.")
     print("[AUTH] Admin access granted")
     return user
+
+def is_admin(user: dict = Depends(verify_token)):
+    roles = user.get(ROLE_CLAIM, [])
+    return "admin" in roles
