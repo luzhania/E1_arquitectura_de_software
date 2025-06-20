@@ -6,7 +6,7 @@ from buy_requests.buy_requests import mqtt_manager
 from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel
 from datetime import datetime
-from auth import verify_token
+from auth import verify_token, admin_required
 from typing import Dict
 from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
@@ -39,6 +39,9 @@ app.add_middleware(
 db = get_db()
 collection = db["current_stocks"]
 transactions_collection = db["transactions"]
+
+admin_transactions_collection = db["admin_transactions"]
+
 users_db = get_db()
 users_collection = users_db["users"]
 collection_event_log = db["event_log"]
@@ -53,24 +56,13 @@ estimations_collection = db["estimations"]
 def read_root():
     return {"message": "API for stocks"}
 
-@app.get("/stocks")
-def get_stocks(
-    symbol: Optional[str] = None, 
-    price: Optional[str] = None,
-    longName: Optional[str] = None,
-    timestamp: Optional[str] = None,
-    quantity: Optional[str] = None,  # Modificado para aceptar un rango en formato "min-max"
-    page: int = Query(1, ge=1), 
-    count: int = Query(25, ge=1)
-):
-    skip = (page - 1) * count
+def build_stocks_query(symbol=None, price=None, longName=None, timestamp=None, quantity=None):
+    from datetime import datetime
     query = {}
-    
-    # Add filters to the query
+    # Symbol filter
     if symbol:
         query["symbol"] = {"$regex": f"^{symbol}", "$options": "i"}
-    
-    # Handle price range (format: min-max)
+    # Price range filter (format: min-max)
     if price:
         price_parts = price.split('-')
         if len(price_parts) == 2:
@@ -80,42 +72,30 @@ def get_stocks(
                 query["price"]["$gte"] = float(min_price)
             if max_price:
                 query["price"]["$lte"] = float(max_price)
-    
-    # Handle stock name
+            if not query["price"]:
+                del query["price"]
+    # Name filter
     if longName:
         query["longName"] = {"$regex": longName, "$options": "i"}
-    
-    # Handle date range (format: YYYY-MM-DD-YYYY-MM-DD)
+    # Timestamp range filter (format: YYYY-MM-DD-YYYY-MM-DD)
     if timestamp:
         parts = timestamp.split('-')
-        # Armamos las dos fechas
         if len(parts) == 6:
-            from_str = f"{parts[0]}-{parts[1]}-{parts[2]}"  # "YYYY-MM-DD"
+            from_str = f"{parts[0]}-{parts[1]}-{parts[2]}"
             to_str   = f"{parts[3]}-{parts[4]}-{parts[5]}"
         else:
             mid = len(parts) // 2
             from_str = '-'.join(parts[:mid])
             to_str   = '-'.join(parts[mid:])
-
-        # Parseamos a datetime
         try:
             dt_from = datetime.fromisoformat(from_str)
             dt_to   = datetime.fromisoformat(to_str)
-
-            # Normalizamos a rango full days
             start = datetime(dt_from.year, dt_from.month, dt_from.day, 0, 0, 0)
             end   = datetime(dt_to.year,   dt_to.month,   dt_to.day,   23, 59, 59)
-
-            query["timestamp"] = {
-                "$gte": start,
-                "$lte": end
-            }
-            print(f"From date: {start}")
-            print(f"To date:   {end}")
-        except ValueError as e:
-            print("Fecha inválida en timestamp:", e)
-    
-    # Handle quantity filter (format: min-max)
+            query["timestamp"] = {"$gte": start, "$lte": end}
+        except ValueError:
+            pass
+    # Quantity range filter (format: min-max)
     if quantity:
         quantity_parts = quantity.split('-')
         if len(quantity_parts) == 2:
@@ -131,17 +111,28 @@ def get_stocks(
                     query["quantity"]["$lte"] = int(max_quantity)
                 except ValueError:
                     pass
+            if not query["quantity"]:
+                del query["quantity"]
         else:
-            # Mantener compatibilidad con la versión anterior
             try:
                 query["quantity"] = {"$gte": int(quantity)}
             except ValueError:
                 pass
-    
-    # For debugging
+    return query
+
+@app.get("/stocks")
+def get_stocks(
+    symbol: Optional[str] = None, 
+    price: Optional[str] = None,
+    longName: Optional[str] = None,
+    timestamp: Optional[str] = None,
+    quantity: Optional[str] = None,  # Modificado para aceptar un rango en formato "min-max"
+    page: int = Query(1, ge=1), 
+    count: int = Query(25, ge=1)
+):
+    skip = (page - 1) * count
+    query = build_stocks_query(symbol, price, longName, timestamp, quantity)
     print(f"MongoDB query: {query}")
-    
-    # Execute the filtered query
     if collection is not None:
         stocks = list(collection.find(query, {"_id": 0}).skip(skip).limit(count))
         total_count = collection.count_documents(query)
@@ -211,8 +202,55 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
     mqtt_manager.enviar_estimacion_jobmaster(user_id, symbol, quantity, price,transaction_id)
     return {"message": "Solicitud de compra exitosa.", "transaction": transaction}
 
+# Usuario normal compra del administrador
 @app.post("/webpay/create")
-def iniciar_webpay(data: dict, user=Depends(verify_token)):
+def iniciar_webpay_user(data: dict, user=Depends(verify_token)):
+    user_id = user["sub"]
+    user = users_collection.find_one({"correo": user_id})
+    if not user:
+        return {"error": "Usuario no encontrado."}
+    stock = collection.find_one({"symbol": data["symbol"]})
+    if not stock:
+        return {"error": f"Stock con símbolo {data['symbol']} no encontrado."}
+    if stock["quantity"] < data["quantity"]:
+        return {"error": "No hay suficientes acciones disponibles."}
+    
+    id = uuid.uuid4()
+
+    b64 = base64.urlsafe_b64encode(id.bytes).decode('utf-8').rstrip('=')
+    transaction_id = b64[:26]
+
+    request_id = str(id)
+    amount = round(float(data["amount"]))
+    
+    # Build the frontend payment URL from the environment variable
+    frontend_payment_url = f"{URL_FRONTEND}/payment" if URL_FRONTEND else "https://www.arquitecturadesoftware.me/payment"
+    trx_resp = tx.get_tx().create(transaction_id, "stocks_buy", amount, frontend_payment_url)
+    
+    if data.get("owner_type", False) == "platform":
+        # Si es una compra a las stocks de la plataforma, envía solicitud de compra al broker
+        mqtt_manager.publish_buy_request(request_id, data["symbol"], data["quantity"], trx_resp["token"])
+        mqtt_manager.publish_validation(request_id, "ACCEPTED", trx_resp["token"])
+    
+    transaction = {
+        "request_id": request_id,
+        "transaction_id": transaction_id,
+        "token_ws": trx_resp["token"],
+        "symbol": data["symbol"],
+        "quantity": data["quantity"],
+        "user_email": user_id,
+        "timestamp": datetime.utcnow(),
+        "status": "PENDING",
+        "estimated_gain": None,  # Inicializar como None
+        "owner_type": data.get("owner_type", "platform")  # Agregar owner_type
+    }
+
+    transactions_collection.insert_one(transaction)
+    return {"url": trx_resp["url"], "token_ws": trx_resp["token"], "request_id": request_id}
+
+#Administrador compra de inventario
+@app.post("admin/webpay/create")
+def iniciar_webpay_admin(data: dict, user=Depends(admin_required)):
     user_id = user["sub"]
     user = users_collection.find_one({"correo": user_id})
     if not user:

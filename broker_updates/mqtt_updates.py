@@ -67,7 +67,8 @@ def on_message(client, userdata, msg):
                 "quantity": data.get("quantity", 0),
                 "price": data.get("price", 0),
                 "longName": data.get("longName"),
-                "timestamp": data.get("timestamp")
+                "timestamp": data.get("timestamp"),
+                "owner_type": "platform"
             }
             collection_stocks.update_one(
                 {"symbol": symbol},
@@ -97,12 +98,12 @@ def on_message(client, userdata, msg):
                 updated_quantity = result["quantity"] + float(emit_quantity)
                 collection_stocks.update_one(
                     {"symbol": symbol},
-                    {
-                        "$set": {
-                            "price": new_price,
-                            "timestamp": timestamp
-                            },
-                        "$inc": {"quantity": emit_quantity}
+                    {"$set": {
+                        "price": new_price,
+                        "timestamp": timestamp,
+                        "owner_type": "platform"
+                        },
+                     "$inc": {"quantity": emit_quantity}
                     }
                 )
                 print(f"[EMIT] Acción actualizada: {symbol} | Nuevo precio: {new_price}, Cantidad total: {updated_quantity}")
@@ -125,7 +126,8 @@ def on_message(client, userdata, msg):
                     "quantity": emit_quantity,
                     "price": new_price,
                     "longName": data["longName"],
-                    "timestamp": timestamp
+                    "timestamp": timestamp,
+                    "owner_type": "platform"
                 }
                 collection_stocks.insert_one(new_stock)
                 print(f"[UPDATE] Acción no encontrada. Se insertó con valores: {new_stock}")
@@ -137,7 +139,8 @@ def on_message(client, userdata, msg):
                 collection_stocks.update_one(
                     {"symbol": symbol},
                     {"$set": {"price": new_price,
-                              "timestamp": data["timestamp"]}}
+                              "timestamp": data["timestamp"],
+                              "owner_type": "platform"}}
                 )
                 print(f"[UPDATE] Precio actualizado para {symbol}: {new_price}")
                 event_data = {
@@ -157,7 +160,8 @@ def on_message(client, userdata, msg):
                     "quantity": 0,
                     "price": new_price,
                     "longName": "",
-                    "timestamp": data["timestamp"]
+                    "timestamp": data["timestamp"],
+                    "owner_type": "platform"
                 }
                 collection_stocks.insert_one(new_stock)
                 print(f"[UPDATE] Acción no encontrada. Se insertó con valores por defecto: {new_stock}")

@@ -10,6 +10,7 @@ load_dotenv()
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
 API_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
 ALGORITHMS = ["RS256"]
+URL_FRONTEND = os.getenv("URL_FRONTEND", "https://www.arquitecturadesoftware.me")
 
 # Detect if running in CI environment
 IS_CI = os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
@@ -86,3 +87,9 @@ def verify_token(token: str = Depends(bearer_scheme)):
         raise credentials_exception
         
     raise credentials_exception
+
+def admin_required(user: dict = Depends(verify_token)):
+    roles = user.get(f"{URL_FRONTEND}/roles", [])
+    if "admin" not in roles:
+        raise HTTPException(status_code=403, detail="Not authorized to access this resource.")
+    return user
