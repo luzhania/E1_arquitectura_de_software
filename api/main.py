@@ -120,6 +120,30 @@ def build_stocks_query(symbol=None, price=None, longName=None, timestamp=None, q
                 pass
     return query
 
+@app.get("/admin/stocks")
+def get_stocks(
+    symbol: Optional[str] = None, 
+    price: Optional[str] = None,
+    longName: Optional[str] = None,
+    timestamp: Optional[str] = None,
+    quantity: Optional[str] = None,  # Modificado para aceptar un rango en formato "min-max"
+    page: int = Query(1, ge=1), 
+    count: int = Query(25, ge=1),
+    user=Depends(admin_required)
+):
+    # Verifica si el usuario es un administrador
+    if not user:
+        return JSONResponse(status_code=403, content={"error": "Acceso denegado. Usuario no autorizado."})
+    skip = (page - 1) * count
+    query = build_stocks_query(symbol, price, longName, timestamp, quantity)
+    print(f"MongoDB query: {query}")
+    if collection is not None:
+        stocks = list(collection.find(query, {"_id": 0}).skip(skip).limit(count))
+        total_count = collection.count_documents(query)
+        return {"stocks": stocks, "page": page, "count": total_count}
+    else:
+        return {"error": "No hay stocks disponibles."}
+    
 @app.get("/stocks")
 def get_stocks(
     symbol: Optional[str] = None, 
@@ -131,11 +155,20 @@ def get_stocks(
     count: int = Query(25, ge=1)
 ):
     skip = (page - 1) * count
+    # Obtener las stocks de collection que están en admin_transactions_collection
+    if admin_transactions_collection is None:
+        return {"error": "No hay stocks disponibles."}
+    # Construir la consulta para admin_transactions_collection
+    # Usar la función build_stocks_query para construir la consulta
     query = build_stocks_query(symbol, price, longName, timestamp, quantity)
     print(f"MongoDB query: {query}")
     if collection is not None:
         stocks = list(collection.find(query, {"_id": 0}).skip(skip).limit(count))
         total_count = collection.count_documents(query)
+        # Filtrar las stocks que están en admin_transactions_collection
+        stocks = [stock for stock in stocks if stock["symbol"] in admin_transactions_collection.distinct("symbol")]
+        if not stocks:
+            return {"error": "No se encontraron acciones que coincidan con los criterios de búsqueda."}
         return {"stocks": stocks, "page": page, "count": total_count}
     else:
         return {"error": "No hay stocks disponibles."}
@@ -288,6 +321,14 @@ def iniciar_webpay_admin(data: dict, user=Depends(admin_required)):
     }
 
     transactions_collection.insert_one(transaction)
+    
+    # Guardar la transacción en la colección de transacciones del administrador
+    #Que actualice la transacción aumentando la cantidad de acciones
+    admin_transactions_collection.update_one(
+        {"symbol": data["symbol"]},
+        {"$inc": {"quantity": data["quantity"]}, "$set": {"timestamp": datetime.utcnow()}},
+        upsert=True
+    )
     return {"url": trx_resp["url"], "token_ws": trx_resp["token"], "request_id": request_id}
 
 @app.post("/webpay/commit")

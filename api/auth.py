@@ -81,6 +81,7 @@ def verify_token(token: str = Depends(bearer_scheme)):
                 audience=API_AUDIENCE,
                 issuer=f"https://{AUTH0_DOMAIN}/"
             )
+            print("[DEBUG] Token payload:", payload)
             return payload
     except Exception as e:
         print(f"[AUTH] Token validation failed: {e}")
@@ -88,8 +89,20 @@ def verify_token(token: str = Depends(bearer_scheme)):
         
     raise credentials_exception
 
+# def admin_required(user: dict = Depends(verify_token)):
+#     # roles = user.get(f"{URL_FRONTEND}/roles", [])##Modificar en deploy
+#     roles = user.get("https://www.arquitecturadesoftware.me/roles", [])
+#     if "admin" not in roles:
+#         print("[AUTH] User is not an admin, access denied")
+#         raise HTTPException(status_code=403, detail="Not authorized to access this resource.")
+#     return user
+
+ROLE_CLAIM = "https://www.arquitecturadesoftware.me/roles"  # ✅ Usa el claim exacto del token
+
 def admin_required(user: dict = Depends(verify_token)):
-    roles = user.get(f"{URL_FRONTEND}/roles", [])
+    roles = user.get(ROLE_CLAIM, [])
+    print(f"[AUTH] User roles: {roles}")
     if "admin" not in roles:
         raise HTTPException(status_code=403, detail="Not authorized to access this resource.")
+    print("[AUTH] Admin access granted")
     return user
