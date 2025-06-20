@@ -13,6 +13,7 @@ BROKER_HOST    = os.getenv("MQTT_BROKER")
 BROKER_PORT    = int(os.getenv("MQTT_PORT", "1883"))
 TOPIC_REQUESTS = "stocks/requests"
 TOPIC_VALIDATION = "stocks/validation"
+TOPIC_AUCTION = "stocks/auctions"
 MQTT_USER      = os.getenv("MQTT_USER")
 MQTT_PASSWORD  = os.getenv("MQTT_PASSWORD")
 
@@ -83,7 +84,23 @@ class MQTTManager:
         }
         self.client.publish(TOPIC_VALIDATION, json.dumps(payload), qos=0)
         print(f"[MQTT] Published validation: {payload}")
-
+    
+    def publish_auction_offer(self, auction_id: str, stock_symbol: str, quantity: int) -> None:
+        if not self._connected:
+            print(f"[MQTT] Mock: Would publish auction {auction_id}")
+            return
+            
+        payload = {
+            "request_id": auction_id,
+            "proposal_id": "",
+            "symbol": stock_symbol,
+            "timestamp": str(datetime.now(timezone.utc).isoformat()),
+            "quantity": quantity,
+            "group_id": self.group_id,
+            "operation": "offer",
+        }
+        self.client.publish(TOPIC_AUCTION, json.dumps(payload), qos=1)
+        print(f"[MQTT] Published auction: {payload}")
 
 
     def enviar_estimacion_jobmaster(self,user_id, stock_symbol, quantity, price, request_id):

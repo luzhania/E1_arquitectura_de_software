@@ -12,6 +12,7 @@ BROKER_HOST = os.getenv("MQTT_BROKER")
 BROKER_PORT = int(os.getenv("MQTT_PORT", "9000"))
 REQUEST_TOPIC = "stocks/requests"
 VALIDATION_TOPIC = "stocks/validation"
+AUCTION_TOPIC = "stocks/auctions"
 MQTT_USER = os.getenv("MQTT_USER")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
@@ -39,6 +40,7 @@ else:
         collection_transactions = db["transactions"]
         collection_users = db["users"]
         collection_event_log = db["event_log"]
+        collection_auction_offers = db["auction_offers"]
         print("[BROKER_REQUESTS] Connected to MongoDB")
     except Exception as e:
         print(f"[BROKER_REQUESTS] Failed to connect to MongoDB: {e}")
@@ -48,6 +50,7 @@ def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
     client.subscribe(REQUEST_TOPIC)
     client.subscribe(VALIDATION_TOPIC)
+    client.subscribe(AUCTION_TOPIC)
 
 def on_message(client, userdata, msg):
     print(f"Mensaje recibido en {msg.topic}: {msg.payload.decode()}")
@@ -67,9 +70,47 @@ def on_message(client, userdata, msg):
                 handle_response(data)
         elif msg.topic == VALIDATION_TOPIC:
             handle_validation(data)
+        elif msg.topic == AUCTION_TOPIC:
+            print("Mensaje de subasta recibido")
+            if is_auction_offer(data):
+                handle_auction_offer(data)
+                print("Oferta de subasta recibida")
+
+            # elif is_auction_pro
+
 
     except json.JSONDecodeError as e:
         print("Error al decodificar el JSON:", e)
+
+def is_auction_offer(data):
+    return data.get("operation") == "offer"
+
+# "auction_id": <uuid>,
+# "proposal_id": "",
+# "symbol": <string>,
+# "timestamp": <string>,
+# "quantity": <int>,
+# "group_id": <int>,
+# "operation": "offer",
+def handle_auction_offer(data):
+    if collection_auction_offers is None:
+        print("[BROKER_REQUESTS] Database not available")
+        return
+    if data.get("group_id") =="27":
+        print("Oferta de subasta ignorada por ser del mismo grupo")
+        return
+    
+    offer_data = {
+        "auction_id": data.get("auction_id"),
+        "proposal_id": data.get("proposal_id", ""),
+        "symbol": data.get("symbol"),
+        "timestamp": parser.isoparse(data["timestamp"]),
+        "quantity": data.get("quantity", 0),
+        "group_id": data.get("group_id"),
+        "operation": data.get("operation", "offer"),
+    }
+    collection_auction_offers.insert_one(offer_data)
+    print(f"Oferta de subasta registrada: {offer_data}")
 
 def handle_validation(data):
     if collection_requests is None:

@@ -41,6 +41,9 @@ collection = db["current_stocks"]
 transactions_collection = db["transactions"]
 
 admin_transactions_collection = db["admin_transactions"]
+auction_stocks_collection = db["auction_stocks"]
+#Ofertas de otros grupos
+collection_auction_offers = db["auction_offers"]
 
 users_db = get_db()
 users_collection = users_db["users"]
@@ -478,6 +481,76 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
         print("Error en la transacción:", e)
         return {"status": "ERROR",
                 "message": "Error en la transacción."}
+    
+@app.get("/admin/transactions")
+def get_admin_transactions(user=Depends(admin_required), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
+    # Solo usuarios administradores pueden acceder
+    user_email = user["sub"]
+    skip = (page - 1) * count
+    transactions = list(
+        admin_transactions_collection.find({}, {"_id": 0})
+        .skip(skip)
+        .limit(count)
+    )
+    total_count = admin_transactions_collection.count_documents({})
+    return {
+        "stocks": transactions,
+        "page": page,
+        "count": total_count
+    }
+
+@app.post("/admin/auction")
+def start_auction(data: dict, user=Depends(admin_required)):
+    # Solo usuarios administradores pueden iniciar una subasta
+    user_email = user["sub"]
+
+    symbol = data.get("symbol", None)
+    quantity = data.get("quantity", None)
+    
+    # Validar datos de entrada
+    if not symbol or not quantity:
+        return {"error": "Faltan datos requeridos: 'symbol' y 'quantity' son obligatorios."}
+
+    # Validar que la cantidad sean positivos
+    if quantity <= 0:
+        return {"error": "La cantidad deben ser mayores que cero."}
+
+    # Crear la subasta en la colección de transacciones del administrador
+    auction_data = {
+        "symbol": symbol,
+        "quantity": quantity,
+        "status": "AUCTION",
+        "timestamp": datetime.utcnow(),
+        "user_email": user_email
+    }
+    auction_id = str(uuid.uuid4())
+
+   # Publicar compra y enviar estimación
+    mqtt_manager.publish_auction_offer(auction_id, symbol, quantity)
+    # Quitar la cantidad de acciones del inventario del administrador
+    admin_transactions_collection.update_one(
+        {"symbol": symbol},
+        {"$inc": {"quantity": -quantity}, "$set": {"timestamp": datetime.utcnow()}},
+        upsert=True
+    )
+    
+    # result = admin_transactions_collection.insert_one(symbol, quantity)
+    return {"message": "Subasta iniciada exitosamente.", "auction_id": str(auction_id), "symbol": symbol, "quantity": quantity}
+
+@app.get("/admin/auction/offers")
+def get_auction_offers(page: int = Query(1, ge=1), count: int = Query(25, ge=1), user=Depends(admin_required)):
+    skip = (page - 1) * count
+    offers = list(collection_auction_offers.find({}, {"_id": 0}).skip(skip).limit(count))
+    total_count = collection_auction_offers.count_documents({})
+    
+    if offers:
+        return {
+            "offers": offers,
+            "page": page,
+            "count": total_count
+        }
+    else:
+        return {"error": "No se encontraron ofertas de subasta."}
 
 #historial de transacciones
 @app.post("/stocks/{symbol}/buy")
@@ -680,8 +753,7 @@ def get_transactions_ok(user: Dict = Depends(verify_token), page: int = Query(1,
     else:
         return {"error": f"No se encontraron transacciones OK para el usuario {user_id}."}
     
-
-# TODO ESTO ES NUEVO
+#  ESTO ES NUEVO
 @app.get("/transactions/{request_id}") #FALTA PROBAR
 def get_transaction(request_id: str, user=Depends(verify_token)):
     user_email = user["sub"]
