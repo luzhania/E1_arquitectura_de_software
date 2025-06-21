@@ -210,8 +210,6 @@ def handle_rejection_response(data):
         
     auction_id = data.get("auction_id")
     proposal_id = data.get("proposal_id")
-    symbol = data.get("symbol")
-    group_id = data.get("group_id")
     timestamp = data.get("timestamp")
 
     if not auction_id or not proposal_id:

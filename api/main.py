@@ -51,9 +51,6 @@ collection_event_log = db["event_log"]
 #ESTO ES NUEVO
 estimations_collection = db["estimations"]
 
-# Inicializar el cliente de Transbank
-# tx_client = tx.get_tx()
-
 
 @app.get("/")
 def read_root():
