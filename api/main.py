@@ -40,9 +40,9 @@ db = get_db()
 collection = db["current_stocks"]
 transactions_collection = db["transactions"]
 
+#Stocks compradas por los administradores
 admin_transactions_collection = db["admin_transactions"]
-auction_stocks_collection = db["auction_stocks"]
-#Ofertas de otros grupos
+#Ofertas de subastas
 collection_auction_offers = db["auction_offers"]
 
 users_db = get_db()
@@ -541,9 +541,9 @@ def start_auction(data: dict, user=Depends(admin_required)):
 def get_auction_offers(page: int = Query(1, ge=1), count: int = Query(25, ge=1), user=Depends(admin_required)):
     skip = (page - 1) * count
     # Ofertas de otros grupos
-    offers = list(collection_auction_offers.find({"group_id": {"$ne": "27"}}, {"_id": 0}).skip(skip).limit(count))
+    offers = list(collection_auction_offers.find({"group_id": {"$ne": "27"}, "status":"OFFERED"}, {"_id": 0}).skip(skip).limit(count))
     # Ofertas del grupo 27 (administrador)
-    admin_offers = list(collection_auction_offers.find({"group_id": "27"}, {"_id": 0}).skip(skip).limit(count))
+    admin_offers = list(collection_auction_offers.find({"group_id": "27", "status":"OFFERED"}, {"_id": 0}).skip(skip).limit(count))
     offers_total_count = collection_auction_offers.count_documents({"group_id": {"$ne": "27"}})
     admin_offers_total_count = collection_auction_offers.count_documents({"group_id": "27"})
     if offers or admin_offers:
@@ -596,6 +596,87 @@ def make_auction_proposal(data: dict, user=Depends(admin_required)):
     
     # result = collection_auction_offers.insert_one(proposal_data)
     return {"message": "Propuesta de subasta creada exitosamente.", "proposal_id": proposal_id}
+
+@app.post("/admin/auction/proposal/accept")
+def accept_auction_proposal(data: dict, user=Depends(admin_required)):
+    # Solo usuarios administradores pueden aceptar propuestas de subasta
+    proposal_id = data.get("proposal_id", None)
+    auction_id = data.get("auction_id", None)
+
+    # Validar datos de entrada
+    if not proposal_id or not auction_id:
+        return {"error": "Faltan datos requeridos: 'proposal_id' y 'auction_id' son obligatorios."}
+
+    # Buscar la propuesta en la colección de ofertas de subasta
+    admin_offer = collection_auction_offers.find_one(
+    {
+        "auction_id": auction_id,
+        "proposals": {
+            "$elemMatch": {
+                "proposal_id": proposal_id
+            }
+        }
+    },
+    {
+        "proposals.$": 1  # Solo retorna el elemento del array que coincide
+    })
+
+    if not admin_offer:
+        return {"error": "Propuesta de subasta no encontrada."}
+    
+    proposal = admin_offer.get("proposals", [{}])[0]  # Obtener la primera propuesta
+    if not proposal:
+        return {"error": "Propuesta de subasta no válida."}
+
+    # # Actualizar el estado de la propuesta a "ACEPTED"
+    # collection_auction_offers.update_one(
+    #     {"_id": proposal_id},
+    #     {"$set": {"status": "ACCEPTED", "timestamp": datetime.utcnow()}}
+    # )
+
+    # Publicar la aceptación de la propuesta al broker
+    mqtt_manager.publish_proposal_response(auction_id, proposal_id, proposal.get("symbol"), proposal.get("quantity", 0), "acceptance")
+
+    return {"message": "Propuesta de subasta aceptada exitosamente.", "proposal_id": proposal_id}
+
+@app.post("/admin/auction/proposal/reject")
+def reject_auction_proposal(data: dict, user=Depends(admin_required)):
+    # Solo usuarios administradores pueden rechazar propuestas de subasta
+    proposal_id = data.get("proposal_id", None)
+    auction_id = data.get("auction_id", None)
+
+    # Validar datos de entrada
+    if not proposal_id or not auction_id:
+        return {"error": "Faltan datos requeridos: 'proposal_id' y 'auction_id' son obligatorios."}
+
+    # Buscar la propuesta en la colección de ofertas de subasta
+    admin_offer = collection_auction_offers.find_one(
+        {
+            "auction_id": auction_id,
+            "proposals": {
+                "$elemMatch": {
+                    "proposal_id": proposal_id
+                }
+            }
+        },
+        {
+            "proposals.$": 1  # Solo retorna el elemento del array que coincide
+        })
+
+    if not admin_offer:
+        return {"error": "Propuesta de subasta no encontrada."}
+    
+    proposal = admin_offer.get("proposals", [{}])[0]
+    if not proposal:
+        return {"error": "Propuesta de subasta no válida."}
+    # Publicar la respuesta de rechazo al broker
+    mqtt_manager.publish_proposal_response(auction_id, proposal_id, proposal.get("symbol"), proposal.get("quantity", 0), "rejection")
+    # # Actualizar el estado de la propuesta a "REJECTED"
+    # collection_auction_offers.update_one(
+    #     {"_id": admin_offer["_id"], "proposals.proposal_id": proposal_id},
+    #     {"$set": {"proposals.$.status": "REJECTED", "timestamp": datetime.utcnow()}}
+    # )
+    return {"message": "Propuesta de subasta rechazada exitosamente.", "proposal_id": proposal_id}
 
 #historial de transacciones
 @app.post("/stocks/{symbol}/buy")

@@ -33,6 +33,7 @@ if IS_CI:
     collection_users = None
     collection_event_log = None
     collection_auction_offers = None
+    admin_transactions_collection = None
 else:
     print("[BROKER_REQUESTS] Iniciando cliente MQTT")
     try:
@@ -44,6 +45,7 @@ else:
         collection_users = db["users"]
         collection_event_log = db["event_log"]
         collection_auction_offers = db["auction_offers"]
+        admin_transactions_collection = db["admin_transactions"]
         print("[BROKER_REQUESTS] Connected to MongoDB")
     except Exception as e:
         print(f"[BROKER_REQUESTS] Failed to connect to MongoDB: {e}")
@@ -84,6 +86,12 @@ def on_message(client, userdata, msg):
             elif is_auction_proposal(data):
                 print("Propuesta de subasta recibida")
                 handle_auction_proposal(data)
+            elif is_auction_response(data):
+                operation = data.get("operation")
+                if operation == "acceptance":
+                    handle_acceptance_response(data)
+                else:
+                    handle_rejection_response(data)
 
     except json.JSONDecodeError as e:
         print("Error al decodificar el JSON:", e)
@@ -93,6 +101,9 @@ def is_auction_offer(data):
 
 def is_auction_proposal(data):
     return data.get("operation") == "proposal"
+
+def is_auction_response(data):
+    return data.get("operation") == "acceptance" or data.get("operation") == "rejection"
 
 def handle_auction_offer(data):
     if collection_auction_offers is None:
@@ -106,7 +117,7 @@ def handle_auction_offer(data):
         "timestamp": data.get("timestamp"),
         "quantity": data.get("quantity", 0),
         "group_id": data.get("group_id"),
-        "operation": data.get("operation", "offer"),
+        "status": "OFFERED",
     }
     collection_auction_offers.insert_one(offer_data)
     print(f"Oferta de subasta registrada: {offer_data}")
@@ -137,6 +148,98 @@ def handle_auction_proposal(data):
     )
     print(f"Propuesta de subasta registrada: {proposal_data}")
 
+def handle_acceptance_response(data):
+    if collection_auction_offers is None:
+        print("[BROKER_REQUESTS] Database not available")
+        return
+        
+    auction_id = data.get("auction_id")
+    proposal_id = data.get("proposal_id")
+    timestamp = data.get("timestamp")
+
+    if not auction_id or not proposal_id:
+        print("Ignorando response sin auction_id o proposal_id:", data)
+        return
+
+    offer = collection_auction_offers.find_one({"auction_id": auction_id})
+    if not offer:
+        print(f"Oferta de subasta no encontrada: {auction_id}")
+        return
+    
+    #Buscar propuesta en proposals collection_auction_offers
+    proposal = next((p for p in offer.get("proposals", []) if p.get("proposal_id") == proposal_id), None)
+
+    #Buscar si en proposals hay una proposal del grupo 27
+    proposal_group_27 = next((p for p in offer.get("proposals", []) if p.get("group_id") == "27"), None)
+
+    if not proposal:
+        print(f"Propuesta no encontrada en la oferta {auction_id} para proposal_id: {proposal_id}")
+        return
+
+    # Actualizar el estado de la oferta a "ACCEPTED"
+    collection_auction_offers.update_one(
+        {"auction_id": auction_id},
+        {"$set": {"status": "ACCEPTED", "timestamp": timestamp}}
+    )
+    
+    print(f"Respuesta de aceptación registrada para la propuesta {proposal_id} en la oferta {auction_id}")
+    #Admin acepta propuesta de otro grupo (Oferta de admin)
+    if offer.get("group_id") == "27":
+        update_admin_inventary(data)
+    #Otro grupo acepta propuesta de admin (Oferta de otro grupo)
+    elif proposal.get("group_id") == "27":
+        update_admin_inventary(offer)
+    #Otro grupo acepta stock a la que admin le hizo una propuesta (Oferta de otro grupo)
+    elif proposal_group_27:
+        update_admin_inventary(proposal_group_27)
+        
+def update_admin_inventary(data):
+    # Guardar la transacción en la colección de transacciones del administrador
+    #Que actualice la transacción aumentando la cantidad de acciones
+    admin_transactions_collection.update_one(
+        {"symbol": data.get("symbol")},
+        {"$inc": {"quantity": data.get("quantity", 0)}, "$set": {"timestamp": data.get("timestamp")}},
+        upsert=True
+    )
+
+def handle_rejection_response(data):
+    #Otro grupo rechaza propuesta de admin, esas stocks vuelven a inventario de grupo
+    if collection_auction_offers is None:
+        print("[BROKER_REQUESTS] Database not available")
+        return
+        
+    auction_id = data.get("auction_id")
+    proposal_id = data.get("proposal_id")
+    symbol = data.get("symbol")
+    group_id = data.get("group_id")
+    timestamp = data.get("timestamp")
+
+    if not auction_id or not proposal_id:
+        print("Ignorando response sin auction_id o proposal_id:", data)
+        return
+
+    offer = collection_auction_offers.find_one({"auction_id": auction_id})
+    if not offer:
+        print(f"Oferta de subasta no encontrada: {auction_id}")
+        return
+    
+    #Buscar propuesta en proposals collection_auction_offers
+    proposal = next((p for p in offer.get("proposals", []) if p.get("proposal_id") == proposal_id), None)
+    if not proposal:
+        print(f"Propuesta no encontrada en la oferta {auction_id} para proposal_id: {proposal_id}")
+        return
+
+    # Actualizar el estado de la oferta a "REJECTED"
+    collection_auction_offers.update_one(
+        {"auction_id": auction_id},
+        {"$set": {"status": "REJECTED", "timestamp": timestamp}}
+    )
+    
+    print(f"Respuesta de rechazo registrada para la propuesta {proposal_id} en la oferta {auction_id}")
+    #Otro grupo rechaza propuesta de admin, esas stocks vuelven a inventario de grupo (Oferta de otro grupo)
+    if proposal.get("group_id") == "27":
+        update_admin_inventary(proposal)
+    
 def handle_validation(data):
     if collection_requests is None:
         print("[BROKER_REQUESTS] Database not available")
