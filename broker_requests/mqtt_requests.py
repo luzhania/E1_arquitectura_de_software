@@ -49,7 +49,7 @@ else:
         print(f"[BROKER_REQUESTS] Failed to connect to MongoDB: {e}")
         client_mongo = None
 
-def on_connect(client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc, properties=None):
     print(f"Conectado al broker con código de resultado: {rc}")
     print(f"[DEBUG] Conectado con código: {rc}")
     client.subscribe(REQUEST_TOPIC)
@@ -331,7 +331,7 @@ def start_mqtt_client():
         print("[BROKER_REQUESTS] No MQTT broker configured")
         return
     print("[BROKER_REQUESTS] Iniciando cliente MQTT")
-    client = mqtt.Client()
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
     if MQTT_USER:
         client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
