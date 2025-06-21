@@ -540,12 +540,13 @@ def start_auction(data: dict, user=Depends(admin_required)):
 @app.get("/admin/auction/offers")
 def get_auction_offers(page: int = Query(1, ge=1), count: int = Query(25, ge=1), user=Depends(admin_required)):
     skip = (page - 1) * count
-    # Solo mostrar offers con group_id != "27"
+    # Ofertas de otros grupos
     offers = list(collection_auction_offers.find({"group_id": {"$ne": "27"}}, {"_id": 0}).skip(skip).limit(count))
+    # Ofertas del grupo 27 (administrador)
     admin_offers = list(collection_auction_offers.find({"group_id": "27"}, {"_id": 0}).skip(skip).limit(count))
     offers_total_count = collection_auction_offers.count_documents({"group_id": {"$ne": "27"}})
     admin_offers_total_count = collection_auction_offers.count_documents({"group_id": "27"})
-    if offers:
+    if offers or admin_offers:
         return {
             "group_offers": offers,
             "admin_offers": admin_offers,
