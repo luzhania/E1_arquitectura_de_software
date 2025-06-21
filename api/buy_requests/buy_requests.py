@@ -100,8 +100,24 @@ class MQTTManager:
             "operation": "offer",
         }
         self.client.publish(TOPIC_AUCTION, json.dumps(payload), qos=1)
-        print(f"[MQTT] Published auction: {payload}")
-
+        print(f"[MQTT] Published auction offer: {payload}")
+    
+    def publish_auction_proposal(self, auction_id: str, proposal_id: str, stock_symbol: str, quantity: int) -> None:
+        if not self._connected:
+            print(f"[MQTT] Mock: Would publish auction proposal {auction_id} {proposal_id}")
+            return
+            
+        payload = {
+            "request_id": auction_id,
+            "proposal_id": proposal_id,
+            "symbol": stock_symbol,
+            "timestamp": str(datetime.now(timezone.utc).isoformat()),
+            "quantity": quantity,
+            "group_id": self.group_id,
+            "operation": "proposal",
+        }
+        self.client.publish(TOPIC_AUCTION, json.dumps(payload), qos=1)
+        print(f"[MQTT] Published auction proposal: {payload}")
 
     def enviar_estimacion_jobmaster(self,user_id, stock_symbol, quantity, price, request_id):
         try:

@@ -20,6 +20,7 @@ MONGO_URI = os.getenv("MONGO_URI")
 
 # Detect if running in CI environment
 IS_CI = os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
+print(f"[BROKER_REQUESTS] Running in CI environment: {IS_CI}")
 
 # Only connect to MongoDB if not in CI
 if IS_CI:
@@ -31,7 +32,9 @@ if IS_CI:
     collection_transactions = None
     collection_users = None
     collection_event_log = None
+    collection_auction_offers = None
 else:
+    print("[BROKER_REQUESTS] Iniciando cliente MQTT")
     try:
         client_mongo = MongoClient(MONGO_URI)
         db = client_mongo["stocks_db"] 
@@ -48,13 +51,16 @@ else:
 
 def on_connect(client, userdata, flags, rc):
     print(f"Conectado al broker con código de resultado: {rc}")
+    print(f"[DEBUG] Conectado con código: {rc}")
     client.subscribe(REQUEST_TOPIC)
+    print(f"[DEBUG] Suscrito a: {REQUEST_TOPIC}")
     client.subscribe(VALIDATION_TOPIC)
+    print(f"[DEBUG] Suscrito a: {VALIDATION_TOPIC}")
     client.subscribe(AUCTION_TOPIC)
+    print(f"[DEBUG] Suscrito a: {AUCTION_TOPIC}")
 
 def on_message(client, userdata, msg):
     print(f"Mensaje recibido en {msg.topic}: {msg.payload.decode()}")
-    
     # Skip processing in CI environment
     if IS_CI:
         print("[BROKER_REQUESTS] Running in CI, skipping message processing")
@@ -75,9 +81,9 @@ def on_message(client, userdata, msg):
             if is_auction_offer(data):
                 handle_auction_offer(data)
                 print("Oferta de subasta recibida")
-
-            # elif is_auction_pro
-
+            elif is_auction_proposal(data):
+                print("Propuesta de subasta recibida")
+                handle_auction_proposal(data)
 
     except json.JSONDecodeError as e:
         print("Error al decodificar el JSON:", e)
@@ -85,32 +91,51 @@ def on_message(client, userdata, msg):
 def is_auction_offer(data):
     return data.get("operation") == "offer"
 
-# "auction_id": <uuid>,
-# "proposal_id": "",
-# "symbol": <string>,
-# "timestamp": <string>,
-# "quantity": <int>,
-# "group_id": <int>,
-# "operation": "offer",
+def is_auction_proposal(data):
+    return data.get("operation") == "proposal"
+
 def handle_auction_offer(data):
     if collection_auction_offers is None:
         print("[BROKER_REQUESTS] Database not available")
         return
-    if data.get("group_id") =="27":
-        print("Oferta de subasta ignorada por ser del mismo grupo")
-        return
     
     offer_data = {
         "auction_id": data.get("auction_id"),
-        "proposal_id": data.get("proposal_id", ""),
+        "proposals": [],
         "symbol": data.get("symbol"),
-        "timestamp": parser.isoparse(data["timestamp"]),
+        "timestamp": data.get("timestamp"),
         "quantity": data.get("quantity", 0),
         "group_id": data.get("group_id"),
         "operation": data.get("operation", "offer"),
     }
     collection_auction_offers.insert_one(offer_data)
     print(f"Oferta de subasta registrada: {offer_data}")
+
+def handle_auction_proposal(data):
+    if collection_auction_offers is None:
+        print("[BROKER_REQUESTS] Database not available")
+        return
+    auction_id = data.get("auction_id")
+    #Buscar auction_id en la colección de ofertas
+    offer = collection_auction_offers.find_one({"auction_id": auction_id})
+    if not offer:
+        print(f"Oferta de subasta no encontrada para auction_id: {auction_id}")
+        return
+    #Añadir proposal_id, symbol, ... a proposals de la collection_auction_offers
+    proposal_data = {
+        "proposal_id": data.get("proposal_id", ""),
+        "symbol": data.get("symbol"),
+        "timestamp": data.get("timestamp"),
+        "quantity": data.get("quantity", 0),
+        "group_id": data.get("group_id"),
+        "operation": data.get("operation", "proposal"),
+    }
+    # Insertar proposal_data al array proposals
+    collection_auction_offers.update_one(
+        {"auction_id": auction_id},
+        {"$push": {"proposals": proposal_data}}
+    )
+    print(f"Propuesta de subasta registrada: {proposal_data}")
 
 def handle_validation(data):
     if collection_requests is None:
@@ -296,6 +321,7 @@ def log_event(event_type, request, price, timestamp):
     print(f"Compra exitosa registrada en el event_log: {event_data}")
 
 def start_mqtt_client():
+    print("[BROKER_REQUESTS] Entrando a start_mqtt_client")
     # Skip MQTT connection in CI environment
     if IS_CI:
         print("[BROKER_REQUESTS] Running in CI environment, skipping MQTT client")
@@ -304,7 +330,7 @@ def start_mqtt_client():
     if not BROKER_HOST:
         print("[BROKER_REQUESTS] No MQTT broker configured")
         return
-        
+    print("[BROKER_REQUESTS] Iniciando cliente MQTT")
     client = mqtt.Client()
 
     if MQTT_USER:

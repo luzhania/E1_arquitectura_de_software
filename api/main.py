@@ -540,17 +540,61 @@ def start_auction(data: dict, user=Depends(admin_required)):
 @app.get("/admin/auction/offers")
 def get_auction_offers(page: int = Query(1, ge=1), count: int = Query(25, ge=1), user=Depends(admin_required)):
     skip = (page - 1) * count
-    offers = list(collection_auction_offers.find({}, {"_id": 0}).skip(skip).limit(count))
-    total_count = collection_auction_offers.count_documents({})
-    
+    # Solo mostrar offers con group_id != "27"
+    offers = list(collection_auction_offers.find({"group_id": {"$ne": "27"}}, {"_id": 0}).skip(skip).limit(count))
+    admin_offers = list(collection_auction_offers.find({"group_id": "27"}, {"_id": 0}).skip(skip).limit(count))
+    offers_total_count = collection_auction_offers.count_documents({"group_id": {"$ne": "27"}})
+    admin_offers_total_count = collection_auction_offers.count_documents({"group_id": "27"})
     if offers:
         return {
-            "offers": offers,
+            "group_offers": offers,
+            "admin_offers": admin_offers,
             "page": page,
-            "count": total_count
+            "count": offers_total_count,
+            "admin_count": admin_offers_total_count
         }
     else:
         return {"error": "No se encontraron ofertas de subasta."}
+
+@app.post("/admin/auction/proposal")
+def make_auction_proposal(data: dict, user=Depends(admin_required)):
+    # Solo usuarios administradores pueden hacer propuestas de subasta
+    user_email = user["sub"]
+
+    auction_id = data.get("auction_id", None)
+    symbol = data.get("symbol", None)
+    quantity = data.get("quantity", None)
+
+    # Validar datos de entrada
+    if not auction_id or not symbol or not quantity:
+        return {"error": "Faltan datos requeridos: 'auction_id', 'symbol' y 'quantity' son obligatorios."}
+
+    # Validar que la cantidad sean positivos
+    if quantity <= 0:
+        return {"error": "La cantidad deben ser mayores que cero."}
+    
+    proposal_id = str(uuid.uuid4())
+    
+    mqtt_manager.publish_auction_proposal(auction_id, proposal_id, symbol, quantity)
+
+    # Quitar la cantidad de acciones del inventario del administrador
+    admin_transactions_collection.update_one(
+        {"symbol": symbol},
+        {"$inc": {"quantity": -quantity}, "$set": {"timestamp": datetime.utcnow()}},
+        upsert=True
+    )
+    
+    # Crear la propuesta en la colección de ofertas de subasta
+    # proposal_data = {
+    #     "auction_id": auction_id,
+    #     "symbol": symbol,
+    #     "quantity": quantity,
+    #     "user_email": user_email,
+    #     "timestamp": datetime.utcnow()
+    # }
+    
+    # result = collection_auction_offers.insert_one(proposal_data)
+    return {"message": "Propuesta de subasta creada exitosamente.", "proposal_id": proposal_id}
 
 #historial de transacciones
 @app.post("/stocks/{symbol}/buy")
