@@ -28,7 +28,7 @@ URL_FRONTEND = os.getenv("URL_FRONTEND")
 
 app = FastAPI(
     title = "API de Stocks",
-    version = __version__
+    version = __version__,
 )
 
 app.add_middleware(
@@ -945,5 +945,3 @@ def update_job(data: dict = Body(...)):
     })
 
     return {"status": "updated"}
-
- 
