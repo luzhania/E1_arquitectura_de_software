@@ -17,7 +17,7 @@ import uuid
 import base64
 import httpx
 from fastapi import Body
-
+from version import __version__
 
 
 import os
@@ -26,7 +26,10 @@ load_dotenv()
 
 URL_FRONTEND = os.getenv("URL_FRONTEND")
 
-app = FastAPI()
+app = FastAPI(
+    title = "API de Stocks",
+    version = __version__
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -943,3 +946,4 @@ def update_job(data: dict = Body(...)):
 
     return {"status": "updated"}
 
+ 

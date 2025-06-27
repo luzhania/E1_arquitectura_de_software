@@ -1,0 +1,2 @@
+[tool.semantic-release]
+version_variable = "api/version.py:__version__"

@@ -1,0 +1,53 @@
+# name: Release
+
+# on:
+#   push:
+#     branches:
+#       - main
+
+# jobs:
+#   release:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Set up Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '18'
+
+#       - name: Install dependencies
+#         run: npm ci
+
+#       - name: Semantic Release
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         run: npx semantic-release
+
+name: Bump version and release
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Install deps
+        run: pip install python-semantic-release
+      - name: Bump version & create release
+        run: semantic-release publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
