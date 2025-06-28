@@ -101,3 +101,5 @@ jobs:
           cp newrelic.ini ${{ matrix.service.path }}/newrelic.ini
           cd ${{ matrix.service.path }}
           docker build -t test-${{ matrix.service.name }} .
+      - name: Debug – listar archivos del servicio
+        run: ls -l ${{ matrix.service.path }}
