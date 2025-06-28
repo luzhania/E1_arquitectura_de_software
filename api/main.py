@@ -265,6 +265,24 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
     mqtt_manager.enviar_estimacion_jobmaster(user_id, symbol, quantity, price,transaction_id)
     return {"message": "Solicitud de compra exitosa.", "transaction": transaction}
 
+#Descuento Acciones compradas por el administrador
+@app.post("/admin/stocks/discount")
+def apply_discount_to_admin_stocks(discount: float, user=Depends(admin_required)):
+    user_id = user["sub"]
+    if discount <= 0 or discount > 100:
+        return {"error": "El descuento debe ser un valor entre 0 y 100."}
+    discount_factor = (100 - discount) / 100
+
+    result = admin_transactions_collection.update_many(
+        {},
+        {"$mul": {"price": discount_factor}}
+    )
+    if result.modified_count > 0:
+        return {"message": f"Descuento del {discount}% aplicado a {result.modified_count} acciones del administrador."}
+    else:
+        return {"error": "No se encontraron acciones del administrador para aplicar el descuento."}
+    
+
 # Usuario normal compra del administrador
 @app.post("/webpay/create")
 def iniciar_webpay_user(data: dict, user=Depends(verify_token)):
