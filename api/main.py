@@ -520,7 +520,7 @@ def get_admin_transactions(user=Depends(admin_required), page: int = Query(1, ge
 @app.post("/admin/auction")
 def start_auction(data: dict, user=Depends(admin_required)):
     # Solo usuarios administradores pueden iniciar una subasta
-    user_email = user["sub"]
+    #user_email = user["sub"]
 
     symbol = data.get("symbol", None)
     quantity = data.get("quantity", None)
