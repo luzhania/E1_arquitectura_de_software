@@ -80,7 +80,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Python (para newrelic-admin)
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Instalar New Relic y generar archivo de configuración
+        run: |
+          pip install newrelic
+          newrelic-admin generate-config "$NEW_RELIC_LICENSE_KEY" newrelic.ini
+        env:
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+      
       - name: Test Docker build for ${{ matrix.service.name }}
         run: |
+          cp newrelic.ini ${{ matrix.service.path }}/newrelic.ini
           cd ${{ matrix.service.path }}
           docker build -t test-${{ matrix.service.name }} .
