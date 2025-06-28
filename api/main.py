@@ -585,14 +585,6 @@ def make_auction_proposal(data: dict, user=Depends(admin_required)):
         upsert=True
     )
     
-    # Crear la propuesta en la colección de ofertas de subasta
-    # proposal_data = {
-    #     "auction_id": auction_id,
-    #     "symbol": symbol,
-    #     "quantity": quantity,
-    #     "user_email": user_email,
-    #     "timestamp": datetime.utcnow()
-    # }
     
     # result = collection_auction_offers.insert_one(proposal_data)
     return {"message": "Propuesta de subasta creada exitosamente.", "proposal_id": proposal_id}
