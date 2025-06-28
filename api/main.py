@@ -4,12 +4,12 @@ from datetime import datetime
 from database import get_db
 from buy_requests.buy_requests import mqtt_manager
 from fastapi.middleware.cors import CORSMiddleware 
-from pydantic import BaseModel
-from datetime import datetime
+#from pydantic import BaseModel
+#from datetime import datetime
 from auth import verify_token, admin_required, is_admin
 from typing import Dict
 from fastapi.responses import JSONResponse
-from fastapi.responses import RedirectResponse
+#from fastapi.responses import RedirectResponse
 from fastapi import Request
 import utils.transbank as tx
 import utils.purchase_receip as purchase_receip
@@ -148,7 +148,7 @@ def get_stocks(
         return {"error": "No hay stocks disponibles."}
     
 @app.get("/stocks")
-def get_stocks(
+def get_stocksv2(
     symbol: Optional[str] = None, 
     price: Optional[str] = None,
     longName: Optional[str] = None,
@@ -265,10 +265,10 @@ def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
     mqtt_manager.enviar_estimacion_jobmaster(user_id, symbol, quantity, price,transaction_id)
     return {"message": "Solicitud de compra exitosa.", "transaction": transaction}
 
-#Descuento Acciones compradas por el administrador
+#Descuento Acciones compradas
 @app.post("/admin/stocks/discount")
 def apply_discount_to_admin_stocks(discount: float, user=Depends(admin_required)):
-    user_id = user["sub"]
+    #user_id = user["sub"]
     if discount <= 0 or discount > 100:
         return {"error": "El descuento debe ser un valor entre 0 y 100."}
     discount_factor = (100 - discount) / 100
@@ -503,7 +503,7 @@ async def commit_transaction(request: Request, user=Depends(verify_token)):
 @app.get("/admin/transactions")
 def get_admin_transactions(user=Depends(admin_required), page: int = Query(1, ge=1), count: int = Query(25, ge=1)):
     # Solo usuarios administradores pueden acceder
-    user_email = user["sub"]
+    #user_email = user["sub"]
     skip = (page - 1) * count
     transactions = list(
         admin_transactions_collection.find({}, {"_id": 0})
@@ -534,13 +534,13 @@ def start_auction(data: dict, user=Depends(admin_required)):
         return {"error": "La cantidad deben ser mayores que cero."}
 
     # Crear la subasta en la colección de transacciones del administrador
-    auction_data = {
-        "symbol": symbol,
-        "quantity": quantity,
-        "status": "AUCTION",
-        "timestamp": datetime.utcnow(),
-        "user_email": user_email
-    }
+    #auction_data = {
+    #    "symbol": symbol,
+    #    "quantity": quantity,
+    #    "status": "AUCTION",
+    #    "timestamp": datetime.utcnow(),
+    #    "user_email": user_email
+    #}
     auction_id = str(uuid.uuid4())
 
    # Publicar compra y enviar estimación
@@ -578,7 +578,7 @@ def get_auction_offers(page: int = Query(1, ge=1), count: int = Query(25, ge=1),
 @app.post("/admin/auction/proposal")
 def make_auction_proposal(data: dict, user=Depends(admin_required)):
     # Solo usuarios administradores pueden hacer propuestas de subasta
-    user_email = user["sub"]
+    #user_email = user["sub"]
 
     auction_id = data.get("auction_id", None)
     symbol = data.get("symbol", None)
@@ -685,7 +685,7 @@ def reject_auction_proposal(data: dict, user=Depends(admin_required)):
 
 #historial de transacciones
 @app.post("/stocks/{symbol}/buy")
-def buy_stock(symbol: str, quantity: int, user=Depends(verify_token)):
+def buy_stockv2(symbol: str, quantity: int, user=Depends(verify_token)):
     user_id = user["sub"]
     print(f"User email: {user_id}")
 
@@ -847,19 +847,19 @@ def get_transactions(user: Dict = Depends(verify_token), page: int = Query(1, ge
     )
     
     # Para cada transacción, agregar la estimación si existe y formatear fechas
-    for tx in transactions:
-        estimation = estimations_collection.find_one({"transaction_id": tx.get("transaction_id")}, {"_id": 0})
+    for tx_ in transactions:
+        estimation = estimations_collection.find_one({"transaction_id": tx_.get("transaction_id")}, {"_id": 0})
         
         if estimation:
             # Formatear fecha completed_at si existe
             if estimation.get("completed_at"):
                 estimation["completed_at"] = estimation["completed_at"].isoformat()
-            tx["estimation"] = estimation
+            tx_["estimation"] = estimation
         else:
-            tx["estimation"] = None
+            tx_["estimation"] = None
         
-        if tx.get("timestamp"):
-            tx["timestamp"] = tx["timestamp"].isoformat()
+        if tx_.get("timestamp"):
+            tx_["timestamp"] = tx_["timestamp"].isoformat()
 
     if transactions:
         total_count = transactions_collection.count_documents({"user_email": user_id})
@@ -919,7 +919,7 @@ async def estado_workers():
 
 @app.post("/internal/update_job")
 def update_job(data: dict = Body(...)):
-    job_id = data.get("job_id")
+    #job_id = data.get("job_id")
     result = data.get("result")
     request_id = result.get("request_id")
 

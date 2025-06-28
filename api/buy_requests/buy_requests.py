@@ -1,8 +1,6 @@
 import os
 import json
-import uuid
 from datetime import datetime, timezone
-from dateutil import parser
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 import requests  
