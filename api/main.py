@@ -628,11 +628,6 @@ def accept_auction_proposal(data: dict, user=Depends(admin_required)):
     if not proposal:
         return {"error": "Propuesta de subasta no válida."}
 
-    # # Actualizar el estado de la propuesta a "ACEPTED"
-    # collection_auction_offers.update_one(
-    #     {"_id": proposal_id},
-    #     {"$set": {"status": "ACCEPTED", "timestamp": datetime.utcnow()}}
-    # )
 
     # Publicar la aceptación de la propuesta al broker
     mqtt_manager.publish_proposal_response(auction_id, proposal_id, proposal.get("symbol"), proposal.get("quantity", 0), "acceptance")
