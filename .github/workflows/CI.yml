@@ -89,8 +89,12 @@ jobs:
         run: |
           pip install newrelic
           newrelic-admin generate-config "$NEW_RELIC_LICENSE_KEY" newrelic.ini
+          cp newrelic.ini ${{ matrix.service.path }}/newrelic.ini
+
         env:
           NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+        
+       
       
       - name: Test Docker build for ${{ matrix.service.name }}
         run: |
