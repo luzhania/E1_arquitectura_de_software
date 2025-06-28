@@ -1,18 +1,20 @@
 FROM python:3.11-slim
 
-WORKDIR .
+# 1. Carpeta de trabajo clara
+WORKDIR /app
 
+# 2. Copiar solo requirements para cachear pip
 COPY requirements.txt .
-COPY . .
-COPY newrelic.ini /app/newrelic.ini
-# Asumiendo que el archivo newrelic.ini ya está en el directorio raíz del proyecto
+
 RUN pip install --no-cache-dir -r requirements.txt
+
+# 3. Copiar todo el código (incluido newrelic.ini)
+COPY . .
+
+# (Si prefieres la copia explícita, descomenta la línea siguiente)
+# COPY newrelic.ini /app/newrelic.ini
 
 EXPOSE 8000
 
-#CMD [ "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-CMD ["sh", "-c", "NEW_RELIC_CONFIG_FILE=newrelic.ini newrelic-admin run-program uvicorn main:app --host 0.0.0.0 --port 8000"]
-
-# Se asume que newrelic.ini ya fue generado y está junto al código
-
-
+# 4. Arrancar con New Relic
+CMD ["sh", "-c", "NEW_RELIC_CONFIG_FILE=/app/newrelic.ini newrelic-admin run-program uvicorn main:app --host 0.0.0.0 --port 8000"]
