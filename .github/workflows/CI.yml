@@ -43,7 +43,7 @@ jobs:
         run: |
           python -c "from main import app; print('✅ API imports successfully')"
       - name: Run Pytest
-        run: pytest -q tests/
+        run: pytest -q
 
   test-brokers:
     runs-on: ubuntu-latest
