@@ -30,15 +30,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Basic syntax check
+      - name: Basic syntax checkAdd commentMore actions
         run: |
           python -m py_compile main.py
           python -m py_compile auth.py
           python -m py_compile database.py
+      
+      - name: Run Ruff linter
+        run: ruff .
 
       - name: Test API startup
         run: |
           python -c "from main import app; print('✅ API imports successfully')"
+      - name: Run Pytest
+        run: pytest -q tests/
 
   test-brokers:
     runs-on: ubuntu-latest
